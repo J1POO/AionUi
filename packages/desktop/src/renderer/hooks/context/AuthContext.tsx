@@ -1,11 +1,22 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { PREVIEW_SCOPE_KEY_PREFIX } from '@/renderer/pages/conversation/Preview/context/previewScope';
 import { refreshSession } from '@/common/adapter/sessionRefresh';
-// M6: CSRF removed with legacy webserver — stub functions for compatibility, re-implement in M7
+import { resolveCoreCsrfToken } from '@/common/adapter/httpBridge';
+
+/**
+ * Double-submit CSRF: the Core accepts a state-changing request only when this
+ * header equals the readable `aionui-csrf-token` cookie. Login is exempt, but
+ * logout and other account calls are not, so every browser-side write attaches
+ * the header when the cookie is present.
+ */
+const csrfHeader = (): Record<string, string> => {
+  const token = resolveCoreCsrfToken();
+  return token ? { 'x-csrf-token': token } : {};
+};
 const withCsrfToken = <T extends Record<string, unknown>>(data: T): T => data;
-const hasValidCsrfToken = (): boolean => true;
+const hasValidCsrfToken = (): boolean => Boolean(resolveCoreCsrfToken());
 const clearCookie = (_name: string, _path?: string): void => {};
-const CSRF_COOKIE_NAME = 'csrf-token';
+const CSRF_COOKIE_NAME = 'aionui-csrf-token';
 
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
@@ -187,6 +198,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...csrfHeader(),
         },
         credentials: 'include',
         body: JSON.stringify(withCsrfToken({ username, password, remember })),
@@ -282,6 +294,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         // Logout also needs CSRF token / 登出同样需要 CSRF Token
         headers: {
           'Content-Type': 'application/json',
+          ...csrfHeader(),
         },
         credentials: 'include',
         body: JSON.stringify(withCsrfToken({})),

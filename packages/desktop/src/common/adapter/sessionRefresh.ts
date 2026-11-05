@@ -32,7 +32,8 @@
  * `browser.ts` can share it without bootstrapping each other's WebSocket.
  */
 
-import { resolveCoreCsrfToken } from './httpBridge';
+import { getBaseUrl, resolveCoreCsrfToken } from './httpBridge';
+import { getConfiguredRemoteCoreUrl } from './backendEndpoint';
 
 /** WebSocket close code the backend uses for auth policy violations (RFC 6455 §7.4.1). */
 export const WS_CLOSE_POLICY_VIOLATION = 1008;
@@ -50,7 +51,7 @@ function isWebUiBrowserMode(): boolean {
   return (
     typeof window !== 'undefined' &&
     typeof document !== 'undefined' &&
-    !(window as { __backendPort?: number }).__backendPort
+    (!(window as { __backendPort?: number }).__backendPort || !!getConfiguredRemoteCoreUrl())
   );
 }
 
@@ -89,7 +90,7 @@ async function performRefresh(): Promise<boolean> {
     if (csrfToken) {
       headers['x-csrf-token'] = csrfToken;
     }
-    const response = await fetch(REFRESH_ENDPOINT, {
+    const response = await fetch(`${getBaseUrl()}${REFRESH_ENDPOINT}`, {
       method: 'POST',
       // Same-origin request: the browser attaches the HttpOnly refresh cookie
       // (scoped to Path=/api/auth/refresh). No body is needed — the backend reads

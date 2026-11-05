@@ -1,4 +1,5 @@
 import type { ConfigKey, ConfigKeyMap } from './configKeys';
+import { getConfiguredRemoteCoreUrl, normalizeRemoteCoreUrl } from '../adapter/backendEndpoint';
 
 type Subscriber = (value: unknown) => void;
 
@@ -9,6 +10,8 @@ declare global {
 }
 
 function getBaseUrl(): string {
+  const remoteUrl = getConfiguredRemoteCoreUrl();
+  if (remoteUrl) return normalizeRemoteCoreUrl(remoteUrl);
   // WebUI browser mode: no preload, fetch same-origin so web-host's
   // static-server reverse-proxies /api/* to the backend.
   if (typeof window !== 'undefined' && typeof document !== 'undefined' && !(window as Window).__backendPort) {
@@ -26,6 +29,7 @@ async function fetchJson<T>(method: string, path: string, body?: unknown): Promi
   }
   const response = await fetch(url, {
     method,
+    ...(getConfiguredRemoteCoreUrl() ? { credentials: 'include' as const } : {}),
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });

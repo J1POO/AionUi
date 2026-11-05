@@ -98,6 +98,15 @@ describe('httpBridge', () => {
       delete (globalThis as { __backendPort?: number }).__backendPort;
     });
 
+    it('uses the configured remote Core URL in Electron mode', () => {
+      (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl = 'https://core.example/';
+      vi.stubGlobal('window', { __backendPort: 23456 });
+
+      expect(getBaseUrl()).toBe('https://core.example');
+
+      delete (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl;
+    });
+
     it('reads port from window.__backendPort with priority', () => {
       (globalThis as { __backendPort?: number }).__backendPort = 11111;
       vi.stubGlobal('window', { __backendPort: 34567 });
@@ -146,6 +155,25 @@ describe('httpBridge', () => {
       expect(fetchSpy.mock.calls[0][0]).toContain('/api/foo');
       expect(fetchSpy.mock.calls[0][1]?.method).toBe('GET');
       expect(fetchSpy.mock.calls[0][1]?.body).toBeUndefined();
+    });
+
+    it('includes remote auth cookies when calling a remote Core', async () => {
+      (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl = 'https://core.example';
+      vi.stubGlobal('window', { __backendPort: 23456 });
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { ok: true } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      await httpGet('/api/auth/status').invoke();
+
+      expect(fetchSpy.mock.calls[0][0]).toBe('https://core.example/api/auth/status');
+      expect(fetchSpy.mock.calls[0][1]?.credentials).toBe('include');
+      delete (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl;
     });
   });
 
