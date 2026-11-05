@@ -1,18 +1,16 @@
 # Build the modified backend for the container's Linux architecture. The
 # `aioncore` named context is supplied by compose.docker.yml.
 FROM oven/bun:1 AS aioncore-build
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+# Install the toolchain before COPY so source edits do not invalidate this layer.
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+       curl ca-certificates build-essential cmake git libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/* \
     && curl --retry 5 --retry-all-errors --retry-delay 2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.95.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /src/aioncore
 COPY --from=aioncore . .
-RUN apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-       build-essential cmake git libssl-dev pkg-config \
-    && rm -rf /var/lib/apt/lists/*
 RUN cargo build --locked --release --package aionui-app --bin aioncore --features weixin
 
 # Build the AionUi renderer and its standalone WebUI launcher.
@@ -35,7 +33,7 @@ RUN mkdir -p /out/static \
 # Runtime contains the server CLI, custom AionCore binary, and tools commonly
 # used by AionCore agents to create or inspect Office documents.
 FROM oven/bun:1 AS runtime
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates curl git libicu-dev nodejs npm \
@@ -43,7 +41,7 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/aionui-venv \
     && /opt/aionui-venv/bin/pip install --no-cache-dir \
-       -i https://mirrors.aliyun.com/pypi/simple/ python-pptx \
+       -i https://pypi.tuna.tsinghua.edu.cn/simple python-pptx \
     && groupadd --system aionui \
     && useradd --system --gid aionui --create-home --home-dir /home/aionui --shell /usr/sbin/nologin aionui \
     && mkdir -p /app /data \
