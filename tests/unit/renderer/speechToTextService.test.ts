@@ -108,6 +108,18 @@ describe('SpeechToTextService.transcribeAudioBlob', () => {
     await expect(pending).rejects.toThrow(/STT_DISABLED/);
   });
 
+  it('includes remote Core cookies for cross-origin multipart requests', async () => {
+    (globalThis as typeof globalThis & { __remoteCoreUrl?: string }).__remoteCoreUrl = 'https://core.example';
+    const pending = transcribeAudioBlob(new Blob(['fake-audio'], { type: 'audio/webm' }));
+
+    const xhr = await waitForRequest();
+    expect(xhr.url).toBe('https://core.example/api/stt');
+    expect(xhr.withCredentials).toBe(true);
+    xhr.respond(200, JSON.stringify({ success: true, data: { model: 'm', provider: 'p', text: 'ok' } }));
+    await pending;
+    delete (globalThis as typeof globalThis & { __remoteCoreUrl?: string }).__remoteCoreUrl;
+  });
+
   it('rejects with STT_FILE_TOO_LARGE on 413', async () => {
     const blob = new Blob(['fake-audio'], { type: 'audio/webm' });
     const pending = transcribeAudioBlob(blob);

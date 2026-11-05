@@ -7,9 +7,11 @@
 import { ipcBridge } from '@/common';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import { getBaseUrl, isBackendHttpError } from '@/common/adapter/httpBridge';
+import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
 import WebviewHost from '@/renderer/components/media/WebviewHost';
 import { openExternalUrl } from '@/renderer/utils/platform';
 import { isElectronDesktop } from '@/renderer/utils/platform';
+import { withPreviewTimeout } from '@/renderer/utils/previewError';
 import { Button, Spin } from '@arco-design/web-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -91,6 +93,10 @@ export function resolveOfficeWatchUrl(url: string, docType: DocType): string {
   const proxyMatch = url.match(/^\/api\/(?:office-watch-proxy|ppt-proxy)\/(\d+)(\/.*)?$/);
   if (proxyMatch && isElectronDesktop()) {
     const [, port, suffix] = proxyMatch;
+    if (getConfiguredRemoteCoreUrl()) {
+      const subPath = suffix && suffix !== '/' ? suffix : '';
+      return `${getBaseUrl()}${PROXY_PATH[docType]}/${port}${subPath}`;
+    }
     return `http://127.0.0.1:${port}${suffix || '/'}`;
   }
 
@@ -112,6 +118,12 @@ export function resolveOfficeWatchUrl(url: string, docType: DocType): string {
   if (!isElectronDesktop()) {
     const parsed = new URL(url);
     return `${PROXY_PATH[docType]}/${parsed.port}`;
+  }
+
+  if (getConfiguredRemoteCoreUrl()) {
+    const parsed = new URL(url);
+    const subPath = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    return `${getBaseUrl()}${PROXY_PATH[docType]}/${parsed.port}${subPath}`;
   }
 
   return url;
@@ -196,7 +208,8 @@ const OfficeWatchViewer: React.FC<OfficeWatchViewerProps> = ({ docType, fileRef,
       setStatus('starting');
       setError(null);
       try {
-        const result = await bridge.start.invoke({ file_path, workspace, file: fileRef });
+        const result = await withPreviewTimeout(bridge.start.invoke({ file_path, workspace, file: fileRef }));
+        if (cancelled) return;
         const errorCode = normalizeOfficeWatchErrorCode(result.error);
         if (errorCode) {
           setError({
@@ -220,7 +233,11 @@ const OfficeWatchViewer: React.FC<OfficeWatchViewerProps> = ({ docType, fileRef,
         }
       } catch (err) {
         if (!cancelled) {
-          const backendCode = isBackendHttpError(err) ? normalizeOfficeWatchErrorCode(err.code) : undefined;
+          const backendCode = isBackendHttpError(err)
+            ? normalizeOfficeWatchErrorCode(err.code)
+            : err instanceof Error
+              ? normalizeOfficeWatchErrorCode(err.message)
+              : undefined;
           if (backendCode) {
             setError({
               code: backendCode,

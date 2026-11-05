@@ -12,6 +12,7 @@ import {
   STT_STREAM_CONNECT_FAILED,
   STT_STREAM_INTERRUPTED,
   STT_STREAM_TIMEOUT,
+  getSpeechStreamUrl,
   startSpeechStream,
 } from '@renderer/services/speech/SpeechStreamClient';
 
@@ -121,6 +122,16 @@ afterEach(() => {
   vi.useRealTimers();
   setBackendPort(undefined);
   vi.restoreAllMocks();
+});
+
+describe('getSpeechStreamUrl', () => {
+  it('uses the configured remote Core endpoint when present', () => {
+    (window as Window & { __remoteCoreUrl?: string }).__remoteCoreUrl = 'https://core.example/';
+
+    expect(getSpeechStreamUrl()).toBe('wss://core.example/api/stt/stream');
+
+    delete (window as Window & { __remoteCoreUrl?: string }).__remoteCoreUrl;
+  });
 });
 
 // ---------------------------------------------------------------------------

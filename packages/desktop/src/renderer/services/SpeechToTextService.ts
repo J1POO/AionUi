@@ -5,6 +5,7 @@
  */
 
 import { getBaseUrl } from '@/common/adapter/httpBridge';
+import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
 import type { SpeechToTextResult } from '@/common/types/provider/speech';
 
 /** Dispatched on window whenever the speech-to-text config is saved. */
@@ -94,8 +95,7 @@ export async function transcribeAudioBlob(blob: Blob, languageHint?: string): Pr
   return new Promise<SpeechToTextResult>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${getBaseUrl()}/api/stt`);
-    // No withCredentials: the desktop backend allows origin `*`, which the
-    // browser rejects for credentialed requests; WebUI is same-origin anyway.
+    xhr.withCredentials = !!getConfiguredRemoteCoreUrl();
 
     xhr.addEventListener('load', () => {
       if (xhr.status < 200 || xhr.status >= 300) {
