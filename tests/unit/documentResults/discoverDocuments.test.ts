@@ -90,6 +90,7 @@ describe('discoverDocuments', () => {
         since: 100,
         references: '/work/report.docx\n已生成 report.docx',
         inputs: '',
+        explicitPaths: [],
       },
     ]);
   });
@@ -164,5 +165,43 @@ describe('discoverDocuments', () => {
     const metadata = vi.fn();
     expect(await discoverDocuments('/work', 0, [file('a.pdf')], metadata)).toEqual([]);
     expect(metadata).not.toHaveBeenCalled();
+  });
+
+  it('extracts paths from the channel send protocol as explicit evidence', () => {
+    const evidence = collectDocumentEvidence([
+      {
+        id: 'user-1',
+        conversation_id: 'a',
+        type: 'text',
+        position: 'right',
+        created_at: 100,
+        content: { content: '把文件发给我' },
+      },
+      {
+        id: 'answer-1',
+        conversation_id: 'a',
+        type: 'text',
+        position: 'left',
+        created_at: 200,
+        content: {
+          content:
+            '已发送。\n[AIONUI_CHANNEL_SEND]\n{"type":"file","path":"./output/sample-report.docx","fileName":"sample-report.docx"}\n[/AIONUI_CHANNEL_SEND]',
+        },
+      },
+    ] as TMessage[]);
+    expect(evidence.groups).toHaveLength(1);
+    expect(evidence.groups[0].explicitPaths).toEqual(['./output/sample-report.docx']);
+  });
+
+  it('includes an explicitly sent file even when it predates the turn', async () => {
+    const metadata = vi.fn().mockResolvedValue({ size: 100, lastModified: 50, isDirectory: false });
+    const result = await discoverDocuments(
+      '/work',
+      150,
+      [file('output/sample-report.docx')],
+      metadata,
+      ['./output/sample-report.docx']
+    );
+    expect(result.map((entry) => entry.name)).toEqual(['sample-report.docx']);
   });
 });

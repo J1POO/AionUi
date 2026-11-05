@@ -17,6 +17,7 @@ type Props = {
   isProcessing: boolean;
   references: string;
   inputs: string;
+  explicitPaths: string[];
 };
 
 /** Verified document results, including binary files produced by shell tools. */
@@ -28,6 +29,7 @@ const DocumentResults: React.FC<Props> = ({
   isProcessing,
   references,
   inputs,
+  explicitPaths,
 }) => {
   const { t } = useTranslation();
   const preview = useLocalFilePreview(workspace);
@@ -49,7 +51,8 @@ const DocumentResults: React.FC<Props> = ({
           workspace,
           since,
           listed.filter((file) => isDocumentReferenced(file, references, inputs)),
-          (path) => ipcBridge.fs.getContentMetadata.invoke({ file: localFileRef(path) })
+          (path) => ipcBridge.fs.getContentMetadata.invoke({ file: localFileRef(path) }),
+          explicitPaths
         );
         if (active) setSnapshot({ owner, files: verified });
       } catch {
@@ -59,7 +62,7 @@ const DocumentResults: React.FC<Props> = ({
     return () => {
       active = false;
     };
-  }, [owner, workspace, since, revision, isProcessing, refresh, references, inputs]);
+  }, [owner, workspace, since, revision, isProcessing, refresh, references, inputs, explicitPaths]);
 
   const perform = async (file: DocumentResult, action: 'download' | 'open'): Promise<void> => {
     setBusyPath(file.fullPath);

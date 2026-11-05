@@ -18,7 +18,37 @@ export function isDocumentReferenced(file: IWorkspaceFlatFile, references: strin
   return mentions(references) && !mentions(inputs);
 }
 
-export type DocumentEvidenceGroup = { anchorMessageId: string; since: number; references: string; inputs: string };
+export type DocumentEvidenceGroup = {
+  anchorMessageId: string;
+  since: number;
+  references: string;
+  inputs: string;
+  /** Paths explicitly sent through the channel send protocol, even if older than `since`. */
+  explicitPaths: string[];
+};
+
+const SEND_BLOCK = /\[AIONUI_CHANNEL_SEND\]([\s\S]*?)\[\/AIONUI_CHANNEL_SEND\]/g;
+
+/** Extract local paths declared in `[AIONUI_CHANNEL_SEND]` blocks. */
+export function extractSentPaths(text: string): string[] {
+  const paths: string[] = [];
+  for (const match of text.matchAll(SEND_BLOCK)) {
+    try {
+      const payload = JSON.parse(match[1].trim()) as {
+        path?: unknown;
+        files?: Array<{ path?: unknown }>;
+      };
+      const actions = Array.isArray(payload.files) ? [...payload.files] : [];
+      if (typeof payload.path === 'string') actions.push(payload);
+      for (const action of actions) {
+        if (action && typeof action.path === 'string') paths.push(action.path);
+      }
+    } catch {
+      // A malformed block must not break card discovery.
+    }
+  }
+  return paths;
+}
 
 export function collectDocumentEvidence(messages: TMessage[]): {
   references: string;
@@ -31,6 +61,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
   let turnReferences: string[] = [];
   let turnInputs: string[] = [];
   let turnWriters: Array<{ id: string; createdAt: number }> = [];
+  let turnExplicit: string[] = [];
   let lastAssistantText: { id: string; createdAt: number } | undefined;
   let turnSince = 0;
 
@@ -47,11 +78,13 @@ export function collectDocumentEvidence(messages: TMessage[]): {
         since: turnSince || anchor.createdAt,
         references: messageReferences,
         inputs: turnInputs.join('\n'),
+        explicitPaths: turnExplicit,
       });
     }
     turnReferences = [];
     turnInputs = [];
     turnWriters = [];
+    turnExplicit = [];
     lastAssistantText = undefined;
     turnSince = 0;
   };
@@ -70,6 +103,12 @@ export function collectDocumentEvidence(messages: TMessage[]): {
     }
     if (!turnSince) turnSince = message.created_at ?? 0;
     if (message.type === 'text') {
+      const sentPaths = extractSentPaths(message.content.content);
+      if (sentPaths.length) {
+        references.push(...sentPaths);
+        turnReferences.push(...sentPaths);
+        turnExplicit.push(...sentPaths);
+      }
       references.push(message.content.content);
       turnReferences.push(message.content.content);
       lastAssistantText = { id: message.id, createdAt: message.created_at ?? 0 };
@@ -94,12 +133,27 @@ export function collectDocumentEvidence(messages: TMessage[]): {
 
 const normalize = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '');
 
-/** Discover actual documents modified during the loaded conversation window. */
+const comparable = (path: string): string => normalize(path).replace(/^\.\//, '').replace(/^\/+/, '');
+
+/** A file explicitly declared in a send-protocol block may predate this turn. */
+function isExplicitlySent(file: IWorkspaceFlatFile, explicitPaths: string[]): boolean {
+  if (!explicitPaths.length) return false;
+  const candidates = [file.relativePath, file.fullPath, file.name].map(comparable);
+  return explicitPaths.some((explicit) => {
+    const target = comparable(explicit);
+    return candidates.some(
+      (candidate) => candidate === target || candidate.endsWith(`/${target}`) || target.endsWith(`/${candidate}`)
+    );
+  });
+}
+
+/** Discover documents generated in this turn, plus files explicitly sent through the protocol. */
 export async function discoverDocuments(
   workspace: string,
   since: number,
   files: IWorkspaceFlatFile[],
-  metadata: (path: string) => Promise<Metadata>
+  metadata: (path: string) => Promise<Metadata>,
+  explicitPaths: string[] = []
 ): Promise<DocumentResult[]> {
   if (!workspace || !Number.isFinite(since) || since <= 0) return [];
   const root = normalize(workspace);
@@ -120,7 +174,13 @@ export async function discoverDocuments(
       for (let file = queue.pop(); file; file = queue.pop()) {
         try {
           const info = await metadata(file.fullPath);
-          if (!info.isDirectory && info.size > 0 && info.lastModified >= since) results.push({ ...file, ...info });
+          if (
+            !info.isDirectory &&
+            info.size > 0 &&
+            (info.lastModified >= since || isExplicitlySent(file, explicitPaths))
+          ) {
+            results.push({ ...file, ...info });
+          }
         } catch {
           // Files may disappear between listing and verification.
         }

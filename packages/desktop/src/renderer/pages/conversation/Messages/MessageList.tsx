@@ -691,6 +691,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
           isProcessing={isProcessing}
           references={group.references}
           inputs={group.inputs}
+          explicitPaths={group.explicitPaths}
         />
       ));
 

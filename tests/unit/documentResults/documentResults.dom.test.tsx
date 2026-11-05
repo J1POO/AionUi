@@ -45,6 +45,7 @@ const props = {
   isProcessing: false,
   references: '报告 one.docx',
   inputs: '',
+  explicitPaths: [],
 };
 describe('DocumentResults', () => {
   beforeEach(() => {
