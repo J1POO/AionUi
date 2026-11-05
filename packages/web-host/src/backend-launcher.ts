@@ -90,6 +90,12 @@ export type BackendLaunchOptions = {
   dataDir?: string;
   logDir?: string;
   /**
+   * Spawn the backend without `--local`. A WebUI reachable from other machines
+   * must keep the Core's identity mode enabled so login and CSRF apply; the
+   * default (`true`) preserves the embedded desktop behaviour.
+   */
+  local?: boolean;
+  /**
    * System dirs exposed to the backend via AIONUI_{CACHE,WORK,LOG}_DIR env.
    * Surfaces on `/api/system/info`. If omitted, the backend inherits
    * process.env and will likely report wrong/empty dirs.
@@ -168,6 +174,11 @@ export type BackendStartupErrorDetails = {
 };
 
 export type BackendStartOptions = {
+  /**
+   * Defaults to `true` (no `--local` flag is appended). Set `false` when the
+   * backend must authenticate callers, e.g. a WebUI exposed on the network.
+   */
+  local?: boolean;
   allowPendingOnHealthTimeout?: boolean;
   onHealthTimeout?: (error: BackendStartupError) => Promise<void> | void;
   onPendingExit?: (error: BackendStartupError) => Promise<void> | void;
@@ -665,7 +676,7 @@ export class BackendLifecycleManager {
     const args = buildSpawnArgs({
       port: this._port,
       dbPath,
-      local: true,
+      local: options?.local ?? true,
       parentPid: process.pid,
       logDir,
       workDir: dirs?.workDir,
@@ -1081,7 +1092,7 @@ export async function startBackend(opts: BackendLaunchOptions): Promise<BackendH
   if (!dataDir) {
     throw new Error('startBackend: dataDir is required');
   }
-  const port = await manager.start(dataDir, opts.logDir, opts.dirs);
+  const port = await manager.start(dataDir, opts.logDir, opts.dirs, { local: opts.local });
   return {
     port,
     stop: () => manager.stop(),

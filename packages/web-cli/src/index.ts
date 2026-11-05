@@ -206,6 +206,9 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
       staticDir,
       port,
       allowRemote,
+      // A network-reachable WebUI must authenticate callers. Local-only mode
+      // (loopback) keeps the embedded single-user behaviour.
+      local: !allowRemote,
       dataDir,
       logDir,
       dirs: {
@@ -229,16 +232,28 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
     // First-launch bootstrap: if SQLite has no admin password yet, seed one via
     // backend and print plaintext credentials. Failure must not abort startup —
     // the user can always fall back to running resetpass manually.
-    await ensureAdminPassword(
-      { backendPort: handle.backendPort, resetCommand: RESET_COMMAND },
-      {
-        fetch: (...args) => fetch(...args),
-        log: (msg) => console.log(msg),
-        warn: (msg) => console.warn(msg),
-        sleep: (ms) => delay(ms),
-        now: () => Date.now(),
-      }
-    );
+    //
+    // Remote mode runs the Core with its identity layer enabled, where the
+    // HTTP reset endpoint is deliberately unavailable (local-only). The
+    // operator must set the first password with the Core CLI instead.
+    if (!allowRemote) {
+      await ensureAdminPassword(
+        { backendPort: handle.backendPort, resetCommand: RESET_COMMAND },
+        {
+          fetch: (...args) => fetch(...args),
+          log: (msg) => console.log(msg),
+          warn: (msg) => console.warn(msg),
+          sleep: (ms) => delay(ms),
+          now: () => Date.now(),
+        }
+      );
+    } else {
+      console.log('');
+      console.log('[aionui-web] Remote mode: authentication is enabled.');
+      console.log('[aionui-web] Set the initial admin password with the Core CLI, for example:');
+      console.log(`[aionui-web]   ${backendBin} --data-dir ${dataDir} user set-password --password-stdin`);
+      console.log('[aionui-web] Log in as "admin" with that password.');
+    }
 
     if (autoOpenBrowser) {
       const openResult = openBrowserUrl(handle.localUrl);

@@ -36,6 +36,7 @@ export async function startWebHost(opts: WebHostOptions): Promise<WebHostHandle>
       resolveBackend: opts.backend.resolveBackend,
       dataDir: opts.dataDir,
       logDir: opts.logDir,
+      local: opts.local,
       dirs: opts.dirs,
     });
   } else {

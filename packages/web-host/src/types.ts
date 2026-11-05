@@ -35,6 +35,12 @@ export type WebHostOptions = {
   staticDir: string;
   port?: number;
   allowRemote?: boolean;
+  /**
+   * Start the owned backend in Core local mode (no auth). Defaults to `true`
+   * to keep the embedded desktop experience. Network-reachable WebUI hosts
+   * must set this to `false` so login and CSRF are enforced.
+   */
+  local?: boolean;
   dataDir?: string;
   logDir?: string;
   dirs?: BackendSystemDirs;
