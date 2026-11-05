@@ -1211,6 +1211,8 @@ export type I18nKey =
   | 'messages.copyLastOutput.empty'
   | 'messages.copySuccess'
   | 'messages.delivery.pending'
+  | 'messages.documentResults.loadFailed'
+  | 'messages.documentResults.title'
   | 'messages.downloadFailed'
   | 'messages.downloadSuccess'
   | 'messages.export.assistantLabel'

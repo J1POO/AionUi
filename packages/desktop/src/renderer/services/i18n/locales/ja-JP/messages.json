@@ -97,5 +97,9 @@
   "requestDetails": "リクエスト内容:",
   "delivery": {
     "pending": "未読"
+  },
+  "documentResults": {
+    "title": "Generated documents",
+    "loadFailed": "Could not load documents. Please refresh to retry."
   }
 }

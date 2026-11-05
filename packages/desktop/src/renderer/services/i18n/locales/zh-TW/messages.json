@@ -97,5 +97,9 @@
   "requestDetails": "請求內容：",
   "delivery": {
     "pending": "未讀"
+  },
+  "documentResults": {
+    "title": "產生的文件",
+    "loadFailed": "文件清單載入失敗，請重新整理。"
   }
 }

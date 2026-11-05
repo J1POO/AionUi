@@ -97,5 +97,9 @@
   "requestDetails": "요청 내용:",
   "delivery": {
     "pending": "읽지 않음"
+  },
+  "documentResults": {
+    "title": "Generated documents",
+    "loadFailed": "Could not load documents. Please refresh to retry."
   }
 }

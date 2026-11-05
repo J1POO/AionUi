@@ -5,6 +5,8 @@
  */
 
 import type { IConversationArtifact } from '@/common/adapter/ipcBridge';
+import DocumentResults from './DocumentResults';
+import { collectDocumentEvidence } from './DocumentResults/discoverDocuments';
 import type { IMessageAcpToolCall, IMessageToolCall, IMessageToolGroup, TMessage } from '@/common/chat/chatLib';
 import { useConversationContextSafe } from '@/renderer/hooks/context/ConversationContext';
 import { useConversationRuntimeView } from '@/renderer/pages/conversation/runtime/useConversationRuntimeView';
@@ -333,6 +335,7 @@ const MessageItem: React.FC<{
 
 const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }> = ({ emptySlot }) => {
   const list = useMessageList();
+  const documentEvidence = useMemo(() => collectDocumentEvidence(list), [list]);
   const isMessageListLoading = useMessageListLoading();
   const pagination = useMessagePaginationState();
   const artifacts = useConversationArtifacts();
@@ -675,6 +678,22 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
     scrollToBottom('smooth');
   };
 
+  const renderDocumentResultsFor = (messageIds: string[]): React.ReactNode =>
+    documentEvidence.groups
+      .filter((group) => messageIds.includes(group.anchorMessageId))
+      .map((group) => (
+        <DocumentResults
+          key={group.anchorMessageId}
+          conversationId={conversationContext?.conversation_id ?? ''}
+          workspace={conversationContext?.workspace}
+          since={group.since}
+          revision={`${list.length}:${list.at(-1)?.id ?? ''}:${list.at(-1)?.status ?? ''}`}
+          isProcessing={isProcessing}
+          references={group.references}
+          inputs={group.inputs}
+        />
+      ));
+
   const renderItem = (_index: number, item: (typeof processedList)[0]) => {
     const highlighted = matchesTargetMessage(item, highlightedMessageId);
     if ('type' in item && item.type === 'artifact') {
@@ -697,31 +716,37 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
     }
     if ('type' in item && ['file_summary', 'tool_summary'].includes(item.type)) {
       return (
-        <div
-          key={item.id}
-          id={`message-${getProcessedItemAnchorId(item)}`}
-          className={`${rowWidthClass} min-w-0 message-item px-8px m-t-10px ${item.type}`}
-          style={highlighted ? highlightStyle : undefined}
-        >
-          {item.type === 'file_summary' && <MessageFileChanges diffsChanges={item.diffs} />}
-          {item.type === 'tool_summary' && <MessageToolGroupSummary messages={item.messages}></MessageToolGroupSummary>}
-        </div>
+        <>
+          <div
+            key={item.id}
+            id={`message-${getProcessedItemAnchorId(item)}`}
+            className={`${rowWidthClass} min-w-0 message-item px-8px m-t-10px ${item.type}`}
+            style={highlighted ? highlightStyle : undefined}
+          >
+            {item.type === 'file_summary' && <MessageFileChanges diffsChanges={item.diffs} />}
+            {item.type === 'tool_summary' && <MessageToolGroupSummary messages={item.messages}></MessageToolGroupSummary>}
+          </div>
+          {item.type === 'tool_summary' && renderDocumentResultsFor(item.sourceMessageIds)}
+        </>
       );
     }
     const message = item as TMessage;
     // User messages keep their own copy row; AI text only shows it at the turn end.
     const showCopyRow = message.position !== 'left' || message.type !== 'text' || aiCopyRowTextIds.has(message.id);
     return (
-      <MessageItem
-        message={message}
-        key={message.id}
-        highlighted={highlighted}
-        rowWidthClass={rowWidthClass}
-        showCopyRow={showCopyRow}
-        isLastMessage={message.id === lastMessageId}
-        hasForkAnchor={forkAnchoredIds.has(message.id)}
-        turnTexts={aiTurnTextsById.get(message.id)}
-      ></MessageItem>
+      <>
+        <MessageItem
+          message={message}
+          key={message.id}
+          highlighted={highlighted}
+          rowWidthClass={rowWidthClass}
+          showCopyRow={showCopyRow}
+          isLastMessage={message.id === lastMessageId}
+          hasForkAnchor={forkAnchoredIds.has(message.id)}
+          turnTexts={aiTurnTextsById.get(message.id)}
+        ></MessageItem>
+        {message.type === 'text' && renderDocumentResultsFor([message.id])}
+      </>
     );
   };
 
