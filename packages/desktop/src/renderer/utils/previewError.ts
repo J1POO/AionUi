@@ -49,3 +49,18 @@ export function classifyPreviewError(error: unknown): PreviewErrorKind {
 export function previewErrorToI18nKey(kind: PreviewErrorKind): string {
   return PREVIEW_ERROR_I18N_KEY_MAP[kind];
 }
+
+/** Bound the UI wait even when the backend installer never returns. */
+export async function withPreviewTimeout<T>(operation: Promise<T>, timeoutMs = 90_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('OFFICECLI_PORT_TIMEOUT')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}

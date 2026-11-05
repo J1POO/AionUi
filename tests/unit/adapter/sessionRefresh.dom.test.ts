@@ -19,6 +19,8 @@ describe('refreshSession (WebUI session refresh)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete (window as WindowWithPort).__backendPort;
+    // jsdom keeps cookies across tests in the same file.
+    document.cookie = 'aionui-csrf-token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
   });
 
   it('POSTs /api/auth/refresh (cookie-borne, no body) and resolves true on success', async () => {
@@ -35,10 +37,18 @@ describe('refreshSession (WebUI session refresh)', () => {
     expect(init.body).toBeUndefined();
   });
 
-  it('sends no x-csrf-token header (open-source WebUI has no CSRF layer — M6 removed, M7 restores)', async () => {
-    // resolveCoreCsrfToken() is a stub returning '' here, so the shared refresh
-    // primitive attaches no CSRF header. The aionpro superset resolves a real
-    // token and asserts the header is present instead.
+  it('attaches x-csrf-token when the readable CSRF cookie exists', async () => {
+    document.cookie = 'aionui-csrf-token=csrf-abc; path=/';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(refreshSession()).resolves.toBe(true);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers).toMatchObject({ 'x-csrf-token': 'csrf-abc' });
+  });
+
+  it('sends no x-csrf-token header when the CSRF cookie is absent', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', fetchMock);
 

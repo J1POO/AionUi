@@ -39,6 +39,7 @@ import { onLanguageChanged } from './process/bridge/systemSettingsBridge';
 import { setInitialLanguage } from '@process/services/i18n';
 import { setupApplicationMenu } from './process/utils/appMenu';
 import { startWebHost } from '@aionui/web-host';
+import { normalizeRemoteCoreUrl, shouldStartLocalBackend } from './common/adapter/backendEndpoint';
 import { initializeZoomFactor, setupZoomForWindow } from './process/utils/zoom';
 import { hydrateWindowsProcessPath } from './process/startup/windowsPath';
 import { registerWindowsAppUserModelId } from './process/startup/windowsAppUserModelId';
@@ -219,6 +220,17 @@ const backendManager = new BackendLifecycleManager(
   },
   resolveBinaryPath
 );
+const configuredRemoteCoreUrl = process.env.AIONUI_REMOTE_CORE_URL?.trim();
+let remoteCoreUrl: string | undefined;
+let remoteCoreConfigurationError: Error | undefined;
+if (configuredRemoteCoreUrl) {
+  try {
+    remoteCoreUrl = normalizeRemoteCoreUrl(configuredRemoteCoreUrl);
+    (globalThis as typeof globalThis & { __remoteCoreUrl?: string }).__remoteCoreUrl = remoteCoreUrl;
+  } catch (error) {
+    remoteCoreConfigurationError = error instanceof Error ? error : new Error(String(error));
+  }
+}
 let disposeCronResumeListener: (() => void) | null = null;
 
 // Flag tracking whether the backend subprocess started successfully. Read by
@@ -232,6 +244,10 @@ let ensureAdminUserPromise: Promise<void> | null = null;
 
 ipcMain.on('get-backend-port', (event) => {
   event.returnValue = backendManager.port;
+});
+
+ipcMain.on('get-remote-core-url', (event) => {
+  event.returnValue = remoteCoreUrl ?? '';
 });
 
 ipcMain.on('get-initial-language', (event) => {
@@ -394,6 +410,33 @@ function markBackendReady(backendPort: number, source: string): void {
   broadcastBackendStartupState(null);
   void ensureAdminUserOnce(backendPort);
   scheduleBackendMigrations();
+}
+
+async function probeRemoteCore(url: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${url}/api/auth/status`, { signal: AbortSignal.timeout(4_000) });
+      // An unauthenticated response is still evidence that the remote Core is
+      // alive; authentication happens in the renderer's login flow.
+      if (response.status > 0) return;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`Remote AionCore is unreachable at ${url}: ${String(lastError ?? 'request failed')}`);
+}
+
+function markRemoteBackendReady(): void {
+  if (backendStartedOk) return;
+  console.info(`[AionUi] remote AionCore ready (${remoteCoreUrl})`);
+  backendStartedOk = true;
+  backendStartupFailed = false;
+  backendStartupFailureInfo = null;
+  (globalThis as typeof globalThis & { __backendStartupFailed?: boolean }).__backendStartupFailed = false;
+  broadcastBackendStartupState(null);
 }
 
 function resolveDebugBackendStartupFailure(): BackendStartupFailureInfo | null {
@@ -808,7 +851,17 @@ const handleAppReady = async (): Promise<void> => {
   }
 
   const debugBackendStartupFailure = resolveDebugBackendStartupFailure();
-  if (debugBackendStartupFailure) {
+  if (remoteCoreConfigurationError) {
+    markBackendStartupFailed(remoteCoreConfigurationError);
+  } else if (!shouldStartLocalBackend(remoteCoreUrl)) {
+    try {
+      await probeRemoteCore(remoteCoreUrl!);
+      markRemoteBackendReady();
+    } catch (error) {
+      markBackendStartupFailed(error);
+      console.error('[AionUi] Remote AionCore connection failed:', error);
+    }
+  } else if (debugBackendStartupFailure) {
     applyDebugBackendStartupFailure(debugBackendStartupFailure);
     mark(`debugBackendStartupFailure:${debugBackendStartupFailure.reason}`);
   } else {

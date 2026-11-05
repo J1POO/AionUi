@@ -97,6 +97,22 @@ describe('resolveOfficeWatchUrl (Electron mode)', () => {
     const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
     expect(mod.resolveOfficeWatchUrl('/api/ppt-proxy/59324', 'ppt')).toBe('http://127.0.0.1:59324/');
   });
+
+  it('routes Office preview through remote Core proxy when remote endpoint is configured', async () => {
+    const win = window as Window & { __remoteCoreUrl?: string };
+    win.__remoteCoreUrl = 'http://192.168.110.55:25808';
+    try {
+      const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
+      expect(mod.resolveOfficeWatchUrl('/api/ppt-proxy/59324', 'ppt')).toBe(
+        'http://192.168.110.55:25808/api/ppt-proxy/59324'
+      );
+      expect(mod.resolveOfficeWatchUrl('http://127.0.0.1:59324/index.html', 'word')).toBe(
+        'http://192.168.110.55:25808/api/office-watch-proxy/59324/index.html'
+      );
+    } finally {
+      delete win.__remoteCoreUrl;
+    }
+  });
 });
 
 /**

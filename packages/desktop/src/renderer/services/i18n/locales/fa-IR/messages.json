@@ -97,5 +97,9 @@
   "requestDetails": "جزئیات درخواست:",
   "delivery": {
     "pending": "خوانده‌نشده"
+  },
+  "documentResults": {
+    "title": "Generated documents",
+    "loadFailed": "Could not load documents. Please refresh to retry."
   }
 }

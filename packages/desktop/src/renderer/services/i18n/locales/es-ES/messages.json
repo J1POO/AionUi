@@ -97,5 +97,9 @@
   "requestDetails": "Detalles de la solicitud:",
   "delivery": {
     "pending": "No leído"
+  },
+  "documentResults": {
+    "title": "Generated documents",
+    "loadFailed": "Could not load documents. Please refresh to retry."
   }
 }

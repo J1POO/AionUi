@@ -7,6 +7,7 @@
  */
 
 import { refreshSession, WS_CLOSE_POLICY_VIOLATION } from './sessionRefresh';
+import { getConfiguredRemoteCoreUrl, normalizeRemoteCoreUrl, resolveBackendEndpoints } from './backendEndpoint';
 
 // ---------------------------------------------------------------------------
 // Base URL
@@ -15,6 +16,7 @@ import { refreshSession, WS_CLOSE_POLICY_VIOLATION } from './sessionRefresh';
 declare global {
   interface Window {
     __backendPort?: number;
+    __remoteCoreUrl?: string;
   }
 }
 
@@ -42,6 +44,7 @@ function getBackendPort(): number {
   return g.__backendPort ?? 13400;
 }
 
+
 /**
  * WebUI (browser) mode: no Electron preload, so `window.__backendPort` is not
  * injected. Use same-origin URLs; web-host's static-server handles the reverse
@@ -52,6 +55,8 @@ function isWebUiBrowserMode(): boolean {
 }
 
 export function getBaseUrl(): string {
+  const remoteUrl = getConfiguredRemoteCoreUrl();
+  if (remoteUrl) return normalizeRemoteCoreUrl(remoteUrl);
   if (isWebUiBrowserMode()) {
     // Same-origin: calls like fetch(`${baseUrl}/api/foo`) resolve to `/api/foo`
     // on whatever host the page was served from.
@@ -61,6 +66,8 @@ export function getBaseUrl(): string {
 }
 
 function getWsUrl(): string {
+  const remoteUrl = getConfiguredRemoteCoreUrl();
+  if (remoteUrl) return resolveBackendEndpoints({ remoteUrl }).wsUrl;
   if (isWebUiBrowserMode()) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}/ws`;
@@ -187,20 +194,24 @@ function isAuthEndpoint(path: string): boolean {
 /**
  * Resolve the Core CSRF double-submit token for the current context.
  *
- * The open-source WebUI removed its CSRF layer with the legacy webserver (M6);
- * a double-submit scheme is slated to return in M7. Until then this is a stub
- * that reports "no token available", so the shared session-refresh primitive
- * (`sessionRefresh.ts`) attaches no `x-csrf-token` header and the backend —
- * which enforces no CSRF check here — accepts the request unchanged.
+ * The Core enforces the double-submit check for non-local identity modes: a
+ * state-changing request must carry `x-csrf-token` equal to the readable
+ * `aionui-csrf-token` cookie (the session cookie itself is HttpOnly). Browser
+ * (WebUI) contexts read that cookie directly; Electron renderer contexts talking
+ * to a remote Core cannot, because the cookie belongs to the remote origin and
+ * those clients authenticate with an explicit bearer token instead.
  *
- * It exists as the single seam every state-changing request would call for its
- * token, so restoring CSRF in M7 (and the aionpro superset, whose backend does
- * enforce the double-submit check) only swaps this body — no caller changes.
- *
- * Returns '' — always, for now.
+ * Returns '' when no readable token exists (main process, `file://` renderer,
+ * or first request before the Core has issued the cookie).
  */
 export function resolveCoreCsrfToken(): string {
-  return '';
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:^|;\s*)aionui-csrf-token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function isStateChangingMethod(method: string): boolean {
+  return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
 }
 
 function sendHttpRequest(
@@ -213,6 +224,7 @@ function sendHttpRequest(
   return fetch(url, {
     method,
     headers,
+    ...(getConfiguredRemoteCoreUrl() ? { credentials: 'include' as const } : {}),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
@@ -231,6 +243,16 @@ export async function httpRequest<T>(
 
   if (options?.headers) {
     Object.assign(headers, options.headers);
+  }
+
+  // Double-submit: mirror the readable CSRF cookie into the request header on
+  // state-changing calls. The Core rejects these calls with 403 CSRF_INVALID
+  // otherwise. GET/HEAD/OPTIONS are exempt by design.
+  if (isStateChangingMethod(method) && !headers['x-csrf-token']) {
+    const csrfToken = resolveCoreCsrfToken();
+    if (csrfToken) {
+      headers['x-csrf-token'] = csrfToken;
+    }
   }
 
   console.debug(

@@ -16,6 +16,7 @@
  */
 
 import { STREAM_SAMPLE_RATE } from './pcmRecorder';
+import { getConfiguredRemoteCoreUrl, resolveBackendEndpoints } from '@/common/adapter/backendEndpoint';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -106,6 +107,11 @@ const isWebUiBrowserMode = (): boolean =>
 
 /** Resolve the streaming endpoint URL for the current runtime mode. */
 export const getSpeechStreamUrl = (): string => {
+  const remoteUrl = getConfiguredRemoteCoreUrl();
+  if (remoteUrl) {
+    const endpoint = resolveBackendEndpoints({ remoteUrl });
+    return `${endpoint.wsUrl.replace(/\/ws$/, '')}/api/stt/stream`;
+  }
   if (isWebUiBrowserMode()) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}/api/stt/stream`;
