@@ -1,4 +1,9 @@
 {
+  "errorBoundary": {
+    "title": "页面出错了",
+    "description": "界面渲染时遇到错误。可以重新加载；如果反复出现，请把下面的错误信息发给开发者。",
+    "reload": "重新加载"
+  },
   "send": "发送",
   "cancel": "取消",
   "save": "保存",

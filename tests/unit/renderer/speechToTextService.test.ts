@@ -27,12 +27,17 @@ class FakeXMLHttpRequest {
   statusText = '';
   responseText = '';
   sentBody: unknown;
+  headers: Record<string, string> = {};
 
   private listeners: Record<string, XhrListener> = {};
 
   open(method: string, url: string) {
     this.method = method;
     this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.headers[name.toLowerCase()] = value;
   }
 
   addEventListener(name: string, listener: XhrListener) {
@@ -108,13 +113,23 @@ describe('SpeechToTextService.transcribeAudioBlob', () => {
     await expect(pending).rejects.toThrow(/STT_DISABLED/);
   });
 
-  it('includes remote Core cookies for cross-origin multipart requests', async () => {
+  it('sends a bearer token for a remote Core multipart request', async () => {
     (globalThis as typeof globalThis & { __remoteCoreUrl?: string }).__remoteCoreUrl = 'https://core.example';
+    // A file:// renderer cannot read the remote Core's cookie; it sends its
+    // access token explicitly instead.
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: (key: string) => (key === 'aionui.remote.token' ? 'remote-token' : null),
+        setItem: () => {},
+        removeItem: () => {},
+      },
+    });
     const pending = transcribeAudioBlob(new Blob(['fake-audio'], { type: 'audio/webm' }));
 
     const xhr = await waitForRequest();
     expect(xhr.url).toBe('https://core.example/api/stt');
-    expect(xhr.withCredentials).toBe(true);
+    expect(xhr.withCredentials).toBe(false);
+    expect(xhr.headers.authorization).toBe('Bearer remote-token');
     xhr.respond(200, JSON.stringify({ success: true, data: { model: 'm', provider: 'p', text: 'ok' } }));
     await pending;
     delete (globalThis as typeof globalThis & { __remoteCoreUrl?: string }).__remoteCoreUrl;

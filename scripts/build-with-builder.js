@@ -768,12 +768,18 @@ try {
   const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
   const projectRoot = path.resolve(__dirname, '..');
   writeGeneratedSentryDsnInclude(projectRoot);
-  prepareAioncore({
-    projectRoot,
-    platform: process.platform,
-    arch: targetArch,
-    version: resolveAioncoreVersion(projectRoot),
-  });
+  if (process.env.AIONUI_SKIP_PREPARE_AIONCORE === '1') {
+    // Offline/prebuilt builds: the caller placed a complete
+    // resources/bundled-aioncore/<platform>-<arch>/ bundle already.
+    console.log('Skipping aioncore preparation (AIONUI_SKIP_PREPARE_AIONCORE=1)');
+  } else {
+    prepareAioncore({
+      projectRoot,
+      platform: process.platform,
+      arch: targetArch,
+      version: resolveAioncoreVersion(projectRoot),
+    });
+  }
 
   // 6. Prepare hub resources (index.json + extension zips for offline fallback)
   execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });

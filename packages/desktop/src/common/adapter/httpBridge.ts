@@ -8,6 +8,7 @@
 
 import { refreshSession, WS_CLOSE_POLICY_VIOLATION } from './sessionRefresh';
 import { getConfiguredRemoteCoreUrl, normalizeRemoteCoreUrl, resolveBackendEndpoints } from './backendEndpoint';
+import { clearRemoteToken, getRemoteToken, notifyRemoteAuthExpired } from './remoteAuth';
 
 // ---------------------------------------------------------------------------
 // Base URL
@@ -221,10 +222,16 @@ function sendHttpRequest(
   body?: unknown
 ): Promise<Response> {
   const url = `${getBaseUrl()}${path}`;
+  const remote = Boolean(getConfiguredRemoteCoreUrl());
+  const token = remote ? getRemoteToken() : null;
+  const merged = { ...headers };
+  if (token) merged.Authorization = `Bearer ${token}`;
   return fetch(url, {
     method,
-    headers,
-    ...(getConfiguredRemoteCoreUrl() ? { credentials: 'include' as const } : {}),
+    headers: merged,
+    // A remote Core authenticates with the explicit bearer token; the file://
+    // renderer cannot send a usable cross-site session cookie anyway.
+    ...(remote ? { credentials: 'omit' as const } : {}),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
@@ -262,11 +269,19 @@ export async function httpRequest<T>(
 
   let response = await sendHttpRequest(method, path, headers, body);
 
+  const remote = Boolean(getConfiguredRemoteCoreUrl());
+  if (response.status === 401 && remote) {
+    // Bearer session is gone. Cookie-based refresh cannot restore it, so drop
+    // the token and let the auth layer return to the login screen.
+    clearRemoteToken();
+    notifyRemoteAuthExpired();
+  }
+
   // Expired access cookie → 401. Attempt one silent session refresh, then replay
   // the original request — the WebUI half of the #4124 fix. refreshSession() is a
   // no-op outside browser mode and single-flights concurrent 401s into one POST.
   // The auth endpoints themselves are skipped to avoid recursion.
-  if (response.status === 401 && !isAuthEndpoint(path)) {
+  if (response.status === 401 && !remote && !isAuthEndpoint(path)) {
     console.debug(`[httpBridge] ${method} ${path} → 401, attempting session refresh`);
     const refreshed = await refreshSession();
     if (refreshed) {
@@ -447,9 +462,17 @@ function ensureWs(): void {
   }
 
   const url = getWsUrl();
+  const remote = Boolean(getConfiguredRemoteCoreUrl());
+  const token = remote ? getRemoteToken() : null;
+  if (remote && !token) {
+    console.debug('[ensureWs] skipped: remote core has no token yet');
+    return;
+  }
   console.debug('[ensureWs] connecting to', url);
   try {
-    ws = new WebSocket(url);
+    // The Core accepts the bearer token as the first WebSocket subprotocol so
+    // native clients never need a cross-site cookie.
+    ws = token ? new WebSocket(url, [token]) : new WebSocket(url);
   } catch (e) {
     console.error('[ensureWs] WebSocket constructor threw:', e);
     scheduleWsReconnect();
@@ -472,6 +495,11 @@ function ensureWs(): void {
     console.debug('[ensureWs] CLOSED code=' + e.code + ' reason=' + e.reason);
     if (ws === current) ws = null;
     if (e.code === WS_CLOSE_POLICY_VIOLATION) {
+      if (getConfiguredRemoteCoreUrl()) {
+        clearRemoteToken();
+        notifyRemoteAuthExpired();
+        return;
+      }
       // Auth policy violation (expired/missing session). Blindly reconnecting with
       // the same dead cookie is the #4124 loop — refresh once and only reconnect if
       // it succeeds. On failure the realtime stream stays down until re-auth;
@@ -604,4 +632,18 @@ export function stubEmitter<Params = undefined>(_name: string): EmitterLike<Para
     on: () => () => {},
     emit: (() => {}) as EmitterLike<Params>['emit'],
   };
+}
+
+/** Reconnect the realtime socket after a successful remote login. */
+export function reconnectRealtime(): void {
+  if (ws) {
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+    ws = null;
+  }
+  wsHasOpened = false;
+  ensureWs();
 }

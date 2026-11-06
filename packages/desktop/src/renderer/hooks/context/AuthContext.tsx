@@ -1,7 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { PREVIEW_SCOPE_KEY_PREFIX } from '@/renderer/pages/conversation/Preview/context/previewScope';
 import { refreshSession } from '@/common/adapter/sessionRefresh';
-import { resolveCoreCsrfToken } from '@/common/adapter/httpBridge';
+import { getBaseUrl, reconnectRealtime, resolveCoreCsrfToken } from '@/common/adapter/httpBridge';
+import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
+import {
+  REMOTE_AUTH_EXPIRED_EVENT,
+  clearRemoteToken,
+  getRemoteToken,
+  setRemoteToken,
+} from '@/common/adapter/remoteAuth';
 
 /**
  * Double-submit CSRF: the Core accepts a state-changing request only when this
@@ -62,6 +69,25 @@ const AUTH_USER_ENDPOINT = '/api/auth/user';
 
 const isDesktopRuntime = typeof window !== 'undefined' && Boolean(window.electronAPI);
 
+/**
+ * A desktop client pointed at a remote Core must authenticate like a browser
+ * client, but with an explicit bearer token instead of a cross-site cookie.
+ */
+const isRemoteCoreMode = Boolean(getConfiguredRemoteCoreUrl());
+
+/** Auth request shape for the current runtime mode. */
+function buildAuthRequest(): { url: string; credentials: RequestCredentials; headers: Record<string, string> } {
+  if (isRemoteCoreMode) {
+    const token = getRemoteToken();
+    return {
+      url: `${getBaseUrl()}${AUTH_USER_ENDPOINT}`,
+      credentials: 'omit',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    };
+  }
+  return { url: AUTH_USER_ENDPOINT, credentials: 'include', headers: {} };
+}
+
 // Clear expired auth cache including cookies and localStorage
 // 清除过期的认证缓存，包括 Cookie 和 localStorage
 function clearAuthCache(): void {
@@ -97,9 +123,11 @@ function clearAuthCache(): void {
 
 async function fetchCurrentUser(signal?: AbortSignal): Promise<AuthUser | null> {
   try {
-    let response = await fetch(AUTH_USER_ENDPOINT, {
+    const auth = buildAuthRequest();
+    let response = await fetch(auth.url, {
       method: 'GET',
-      credentials: 'include',
+      credentials: auth.credentials,
+      headers: auth.headers,
       signal,
     });
 
@@ -107,12 +135,14 @@ async function fetchCurrentUser(signal?: AbortSignal): Promise<AuthUser | null> 
     // and re-check before concluding the user is unauthenticated. Without this
     // the status poll would kick a refreshable session to /login (#4124).
     // refreshSession() single-flights with the httpBridge refresh path.
-    if (response.status === 401) {
+    // Remote bearer sessions have no cookie-based refresh; a 401 is final.
+    if (response.status === 401 && !isRemoteCoreMode) {
       const refreshed = await refreshSession();
       if (refreshed) {
-        response = await fetch(AUTH_USER_ENDPOINT, {
+        response = await fetch(auth.url, {
           method: 'GET',
-          credentials: 'include',
+          credentials: auth.credentials,
+          headers: auth.headers,
           signal,
         });
       }
@@ -146,7 +176,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const abortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
-    if (isDesktopRuntime) {
+    // Local desktop mode has no login; a remote Core authenticates every client.
+    if (isDesktopRuntime && !isRemoteCoreMode) {
       setStatus('authenticated');
       setUser(null);
       setReady(true);
@@ -176,17 +207,30 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     };
   }, [refresh]);
 
+  // httpBridge clears the bearer token on 401 / WS policy-violation and fires
+  // this event; drop back to the login screen instead of spinning on a dead session.
+  useEffect(() => {
+    if (!isRemoteCoreMode) return;
+    const onExpired = (): void => {
+      setUser(null);
+      setStatus('unauthenticated');
+      setReady(true);
+    };
+    window.addEventListener(REMOTE_AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(REMOTE_AUTH_EXPIRED_EVENT, onExpired);
+  }, []);
+
   const login = useCallback(async ({ username, password, remember }: LoginParams): Promise<LoginResult> => {
     try {
-      if (isDesktopRuntime) {
+      if (isDesktopRuntime && !isRemoteCoreMode) {
         setReady(true);
         return { success: true };
       }
 
       // Check CSRF token availability before login
       // If token is missing, clear cache and inform user
-      const csrfTokenValid = hasValidCsrfToken();
-      if (!csrfTokenValid) {
+      const csrfTokenValid = !isRemoteCoreMode && hasValidCsrfToken();
+      if (!isRemoteCoreMode && !csrfTokenValid) {
         console.warn('CSRF token missing or invalid, clearing cache');
         clearAuthCache();
         // Allow login to proceed anyway - server will set new token
@@ -194,13 +238,15 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
       // P1 安全修复：登录请求需要 CSRF Token / P1 Security fix: Login needs CSRF token
       // Backend route is /login; web-host's static-server explicitly proxies it.
-      const response = await fetch('/login', {
+      // Remote mode: /login is CSRF-exempt on the Core and there is no readable
+      // cookie in a file:// renderer, so post directly to the remote origin.
+      const response = await fetch(isRemoteCoreMode ? `${getBaseUrl()}/login` : '/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...csrfHeader(),
         },
-        credentials: 'include',
+        credentials: isRemoteCoreMode ? 'omit' : 'include',
         body: JSON.stringify(withCsrfToken({ username, password, remember })),
       });
 
@@ -208,6 +254,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         success: boolean;
         message?: string;
         user?: AuthUser;
+        token?: string;
       };
 
       if (!response.ok || !data.success || !data.user) {
@@ -246,6 +293,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         };
       }
 
+      if (isRemoteCoreMode && data.token) {
+        setRemoteToken(data.token);
+      }
       setUser(data.user);
       setStatus('authenticated');
       setReady(true);
@@ -253,6 +303,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       // Re-enable WebSocket reconnection after successful login (WebUI mode only)
       if (typeof window !== 'undefined' && (window as any).__websocketReconnect) {
         (window as any).__websocketReconnect();
+      }
+      // Desktop remote mode: the realtime socket was held back until a token
+      // existed; connect it now so events stream without a reload.
+      if (isRemoteCoreMode) {
+        reconnectRealtime();
       }
 
       return { success: true };
@@ -281,7 +336,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, []);
 
   const logout = useCallback(async () => {
-    if (isDesktopRuntime) {
+    if (isDesktopRuntime && !isRemoteCoreMode) {
       setUser(null);
       setStatus('authenticated');
       setReady(true);
@@ -289,19 +344,24 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     }
 
     try {
-      await fetch('/logout', {
+      const token = isRemoteCoreMode ? getRemoteToken() : null;
+      await fetch(isRemoteCoreMode ? `${getBaseUrl()}/logout` : '/logout', {
         method: 'POST',
         // Logout also needs CSRF token / 登出同样需要 CSRF Token
+        // Remote mode authenticates with the bearer token, which the Core
+        // exempts from the CSRF double-submit check.
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...csrfHeader(),
         },
-        credentials: 'include',
+        credentials: isRemoteCoreMode ? 'omit' : 'include',
         body: JSON.stringify(withCsrfToken({})),
       });
     } catch (error) {
       console.error('Logout request failed:', error);
     } finally {
+      clearRemoteToken();
       setUser(null);
       setStatus('unauthenticated');
       // Clear cache on logout for security

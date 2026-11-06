@@ -72,7 +72,13 @@ module.exports = async function afterPack(context) {
       console.warn(`   ⚠️  app.asar.unpacked not found`);
     }
 
-    verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    if (process.env.AIONUI_SKIP_PREPARE_AIONCORE === '1') {
+      // Remote-only client: the app never spawns a local Core, so the 826MB
+      // bundled runtime is intentionally absent from this package.
+      console.log('   Skipping bundled aioncore verification (remote-only build)');
+    } else {
+      verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    }
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }

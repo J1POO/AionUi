@@ -220,7 +220,28 @@ const backendManager = new BackendLifecycleManager(
   },
   resolveBinaryPath
 );
-const configuredRemoteCoreUrl = process.env.AIONUI_REMOTE_CORE_URL?.trim();
+/**
+ * A portable remote-only build ships `remote-core.txt` next to the executable
+ * (or in userData). It lets a copied zip point at a Core without environment
+ * variables; an explicit AIONUI_REMOTE_CORE_URL still wins.
+ */
+function readRemoteCoreFile(): string | undefined {
+  const candidates = [
+    path.join(path.dirname(process.execPath), 'remote-core.txt'),
+    path.join(app.getPath('userData'), 'remote-core.txt'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const value = fs.readFileSync(candidate, 'utf8').trim();
+      if (value) return value;
+    } catch {
+      /* missing file is expected for local builds */
+    }
+  }
+  return undefined;
+}
+
+const configuredRemoteCoreUrl = process.env.AIONUI_REMOTE_CORE_URL?.trim() || readRemoteCoreFile();
 let remoteCoreUrl: string | undefined;
 let remoteCoreConfigurationError: Error | undefined;
 if (configuredRemoteCoreUrl) {

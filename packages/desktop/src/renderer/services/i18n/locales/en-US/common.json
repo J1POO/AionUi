@@ -1,4 +1,9 @@
 {
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "The interface hit a rendering error. Reload to recover; if it keeps happening, send the details below to the developer.",
+    "reload": "Reload"
+  },
   "send": "Send",
   "cancel": "Cancel",
   "save": "Save",

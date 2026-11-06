@@ -6,6 +6,7 @@
 
 import { getBaseUrl } from '@/common/adapter/httpBridge';
 import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
+import { getRemoteToken } from '@/common/adapter/remoteAuth';
 import type { SpeechToTextResult } from '@/common/types/provider/speech';
 
 /** Dispatched on window whenever the speech-to-text config is saved. */
@@ -95,7 +96,12 @@ export async function transcribeAudioBlob(blob: Blob, languageHint?: string): Pr
   return new Promise<SpeechToTextResult>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${getBaseUrl()}/api/stt`);
-    xhr.withCredentials = !!getConfiguredRemoteCoreUrl();
+    // Remote mode authenticates with an explicit bearer token; the file://
+    // renderer cannot carry the Core's cross-site session cookie.
+    if (getConfiguredRemoteCoreUrl()) {
+      const token = getRemoteToken();
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
 
     xhr.addEventListener('load', () => {
       if (xhr.status < 200 || xhr.status >= 300) {

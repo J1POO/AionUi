@@ -395,3 +395,10 @@ body.login-page-active {
     display: none;
   }
 }
+
+.login-page__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--color-text-3, #888);
+}
+

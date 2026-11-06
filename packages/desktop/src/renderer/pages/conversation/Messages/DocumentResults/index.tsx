@@ -1,4 +1,5 @@
 import { ipcBridge } from '@/common';
+import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
 import { localFileRef } from '@/common/types/chatFile';
 import { useLocalFilePreview } from '@/renderer/pages/conversation/Preview/hooks/useLocalFilePreview';
 import { downloadFileFromRef } from '@/renderer/utils/file/download';
@@ -118,7 +119,7 @@ const DocumentResults: React.FC<Props> = ({
             <Button size='mini' loading={busyPath === file.fullPath} onClick={() => void perform(file, 'download')}>
               {t('common.download')}
             </Button>
-            {isElectronDesktop() && (
+            {isElectronDesktop() && !getConfiguredRemoteCoreUrl() && (
               <Button size='mini' disabled={busyPath === file.fullPath} onClick={() => void perform(file, 'open')}>
                 {t('preview.openInSystemApp')}
               </Button>

@@ -80,6 +80,10 @@ describe('httpBridge', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    // Clear module-level globals a failing test may have left behind, so one
+    // failure cannot poison the next test's remote/local resolution.
+    delete (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl;
+    delete (globalThis as { __backendPort?: number }).__backendPort;
   });
 
   describe('getBaseUrl', () => {
@@ -157,9 +161,14 @@ describe('httpBridge', () => {
       expect(fetchSpy.mock.calls[0][1]?.body).toBeUndefined();
     });
 
-    it('includes remote auth cookies when calling a remote Core', async () => {
+    it('authenticates a remote Core request with a bearer token, not cookies', async () => {
       (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl = 'https://core.example';
-      vi.stubGlobal('window', { __backendPort: 23456 });
+      // A file:// renderer cannot send the Core's cross-site cookie, so remote
+      // requests omit credentials and carry the access token instead.
+      vi.stubGlobal('window', {
+        __backendPort: 23456,
+        localStorage: { getItem: () => 'remote-token', setItem: () => {}, removeItem: () => {} },
+      });
       const fetchSpy = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ data: { ok: true } }), {
           status: 200,
@@ -172,8 +181,8 @@ describe('httpBridge', () => {
       await httpGet('/api/auth/status').invoke();
 
       expect(fetchSpy.mock.calls[0][0]).toBe('https://core.example/api/auth/status');
-      expect(fetchSpy.mock.calls[0][1]?.credentials).toBe('include');
-      delete (globalThis as { __remoteCoreUrl?: string }).__remoteCoreUrl;
+      expect(fetchSpy.mock.calls[0][1]?.credentials).toBe('omit');
+      expect(fetchSpy.mock.calls[0][1]?.headers).toMatchObject({ Authorization: 'Bearer remote-token' });
     });
   });
 

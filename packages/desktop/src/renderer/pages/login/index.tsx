@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { changeLanguage } from '@/renderer/services/i18n';
 import { useNavigate } from 'react-router-dom';
 import AppLoader from '@renderer/components/layout/AppLoader';
+import { getConfiguredRemoteCoreUrl, setConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
 import { useAuth } from '../../hooks/context/AuthContext';
 import './LoginPage.css';
 
@@ -42,6 +43,10 @@ const LoginPage: React.FC = () => {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [loading, setLoading] = useState(false);
+  // Desktop clients can point at any reachable Core; browser/WebUI logins are
+  // always same-origin, so the field is desktop-only.
+  const isDesktopClient = typeof window !== 'undefined' && Boolean(window.electronAPI);
+  const [serverUrl, setServerUrl] = useState(() => getConfiguredRemoteCoreUrl() ?? '');
 
   const usernameRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
@@ -140,6 +145,15 @@ const LoginPage: React.FC = () => {
         return;
       }
 
+      if (isDesktopClient) {
+        try {
+          setConfiguredRemoteCoreUrl(serverUrl.trim() || null);
+        } catch {
+          showMessage({ type: 'error', text: t('login.errors.serverInvalid') });
+          return;
+        }
+      }
+
       setLoading(true);
       setMessage(null);
 
@@ -224,6 +238,26 @@ const LoginPage: React.FC = () => {
         </div>
 
         <form className='login-page__form' onSubmit={handleSubmit}>
+          {isDesktopClient && (
+            <div className='login-page__form-item'>
+              <label className='login-page__label' htmlFor='server-address'>
+                {t('login.serverAddress')}
+              </label>
+              <div className='login-page__input-wrapper'>
+                <input
+                  id='server-address'
+                  name='serverAddress'
+                  className='login-page__input'
+                  placeholder={t('login.serverAddressPlaceholder')}
+                  value={serverUrl}
+                  onChange={(event) => setServerUrl(event.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+              <p className='login-page__hint'>{t('login.serverAddressHint')}</p>
+            </div>
+          )}
+
           <div className='login-page__form-item'>
             <label className='login-page__label' htmlFor='username'>
               {t('login.username')}

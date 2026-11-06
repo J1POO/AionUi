@@ -7,6 +7,9 @@
   "password": "Password",
   "passwordPlaceholder": "Enter your password",
   "rememberMe": "Remember me",
+  "serverAddress": "Server address",
+  "serverAddressPlaceholder": "http://192.168.1.10:25809",
+  "serverAddressHint": "AionCore URL. Leave empty to use the built-in default.",
   "submit": "Sign In",
   "submitting": "Signing in...",
   "success": "Login successful! Redirecting...",
@@ -21,6 +24,7 @@
     "tooManyAttempts": "Too many attempts, please try again later",
     "networkError": "Connection failed, please try again",
     "serverError": "Server error, please try again later",
+    "serverInvalid": "Enter a valid http:// or https:// server address",
     "unknown": "Sign-in failed, please try again"
   }
 }

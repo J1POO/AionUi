@@ -7,6 +7,9 @@
   "password": "密码",
   "passwordPlaceholder": "请输入密码",
   "rememberMe": "记住我",
+  "serverAddress": "服务器地址",
+  "serverAddressPlaceholder": "http://192.168.1.10:25809",
+  "serverAddressHint": "AionCore 的地址；留空使用内置默认值",
   "submit": "登录",
   "submitting": "登录中...",
   "success": "登录成功！正在跳转...",
@@ -21,6 +24,7 @@
     "tooManyAttempts": "登录尝试过多，请稍后再试",
     "networkError": "连接失败，请稍后重试",
     "serverError": "服务器开小差了，请稍后重试",
+    "serverInvalid": "请输入正确的 http:// 或 https:// 服务器地址",
     "unknown": "登录失败，请稍后再试"
   }
 }

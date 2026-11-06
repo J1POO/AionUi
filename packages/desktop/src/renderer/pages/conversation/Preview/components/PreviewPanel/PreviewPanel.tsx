@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
 import { downloadFileFromPath, downloadFileFromRef, downloadTextContent } from '@/renderer/utils/file/download';
 import { formatFileSize } from '@/renderer/services/FileService';
 import { CONTENT_FREE_TYPES, formatSizeAboveLimit } from '@/renderer/utils/file/previewPayload';
@@ -661,6 +662,7 @@ const PreviewPanel: React.FC = () => {
   );
 
   const showOpenInSystemButton =
+    !getConfiguredRemoteCoreUrl() &&
     canOpenInSystem(Boolean(metadata?.file_path), metadata?.fileRef) &&
     shouldOfferOpenInSystem(content_type, Boolean(metadata?.oversized), FILE_TYPES_WITH_BUILTIN_OPEN);
 

@@ -10,9 +10,32 @@ declare global {
   }
 }
 
+export const REMOTE_SERVER_STORAGE_KEY = 'aionui.remote.server';
+
 export function getConfiguredRemoteCoreUrl(): string | undefined {
-  if (typeof window !== 'undefined' && window.__remoteCoreUrl) return window.__remoteCoreUrl;
+  // A per-user server override saved from the login screen wins over the
+  // build-time/env default, so one zip can point at different Cores.
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(REMOTE_SERVER_STORAGE_KEY);
+      if (saved) return normalizeRemoteCoreUrl(saved);
+    } catch {
+      /* ignore malformed or unavailable storage */
+    }
+    if (window.__remoteCoreUrl) return window.__remoteCoreUrl;
+  }
   return (globalThis as typeof globalThis & { __remoteCoreUrl?: string }).__remoteCoreUrl;
+}
+
+/** Persist the user-selected Core origin; `null` restores the built-in default. */
+export function setConfiguredRemoteCoreUrl(value: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value) window.localStorage.setItem(REMOTE_SERVER_STORAGE_KEY, normalizeRemoteCoreUrl(value));
+    else window.localStorage.removeItem(REMOTE_SERVER_STORAGE_KEY);
+  } catch {
+    /* ignore storage failures; login will surface a connection error */
+  }
 }
 
 export function shouldStartLocalBackend(remoteUrl?: string): boolean {

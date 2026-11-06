@@ -6,6 +6,7 @@
 
 import { getBaseUrl, resolveCoreCsrfToken } from '@/common/adapter/httpBridge';
 import { getConfiguredRemoteCoreUrl } from '@/common/adapter/backendEndpoint';
+import { getRemoteToken } from '@/common/adapter/remoteAuth';
 import { trackUpload, type UploadSource } from '@/renderer/hooks/file/useUploadState';
 
 /** Sentinel error message used when an upload is cancelled by the caller. */
@@ -51,7 +52,11 @@ export async function uploadFileViaHttp(
     xhr.open('POST', `${getBaseUrl()}/api/fs/upload`);
     const csrfToken = resolveCoreCsrfToken();
     if (csrfToken) xhr.setRequestHeader('x-csrf-token', csrfToken);
-    xhr.withCredentials = !!getConfiguredRemoteCoreUrl();
+    if (getConfiguredRemoteCoreUrl()) {
+      const token = getRemoteToken();
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    xhr.withCredentials = false;
 
     // Wire AbortSignal → xhr.abort. Closing the XHR tears down the underlying
     // socket; the backend (axum/multer) treats the truncated multipart body as
