@@ -86,10 +86,11 @@ export function collectDocumentEvidence(messages: TMessage[]): {
   let turnSince = 0;
 
   const flushTurn = (): void => {
+    // Uploaded files belong under the user message: it is always rendered,
+    // while an assistant text can be folded into a tool summary and never get
+    // its own render slot.
     const anchor =
-      lastAssistantText ??
-      turnWriters.at(-1) ??
-      (pendingInbound.length > 0 ? turnStart : undefined);
+      pendingInbound.length > 0 ? turnStart : (lastAssistantText ?? turnWriters.at(-1));
     const messageReferences = turnReferences.join('\n');
     if (
       anchor &&
@@ -168,8 +169,8 @@ const normalize = (path: string): string => path.replace(/\\/g, '/').replace(/\/
 
 const comparable = (path: string): string => normalize(path).replace(/^\.\//, '').replace(/^\/+/, '');
 
-/** A file explicitly declared in a send-protocol block may predate this turn. */
-function isExplicitlySent(file: IWorkspaceFlatFile, explicitPaths: string[]): boolean {
+/** A file explicitly declared in a send-protocol or inbound block may predate this turn. */
+export function isExplicitlySent(file: IWorkspaceFlatFile, explicitPaths: string[]): boolean {
   if (!explicitPaths.length) return false;
   const candidates = [file.relativePath, file.fullPath, file.name].map(comparable);
   return explicitPaths.some((explicit) => {

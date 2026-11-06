@@ -680,7 +680,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
 
   const renderDocumentResultsFor = (messageIds: string[]): React.ReactNode =>
     documentEvidence.groups
-      .filter((group) => messageIds.includes(group.anchorMessageId))
+      .filter((group) => messageIds.includes(group.anchorMessageId) && group.inboundPaths.length === 0)
       .map((group) => (
         <DocumentResults
           key={group.anchorMessageId}
@@ -766,6 +766,14 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
     return <div className='relative flex-1 h-full flex items-center justify-center'>{emptySlot}</div>;
   }
 
+  // Uploaded channel files are shown as one stable section at the end of the
+  // conversation instead of hanging off a message that may be folded away.
+  const uploadedPaths = [...new Set(documentEvidence.groups.flatMap((group) => group.inboundPaths))];
+  const uploadedSince = documentEvidence.groups.reduce(
+    (min, group) => (group.inboundPaths.length > 0 ? Math.min(min, group.since) : min),
+    Number.POSITIVE_INFINITY
+  );
+
   return (
     <div className='relative flex-1 h-full'>
       {/* Use PreviewGroup to wrap all messages for cross-message image preview */}
@@ -795,6 +803,20 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
               {processedList.map((item, index) => (
                 <React.Fragment key={getProcessedItemAnchorId(item) || index}>{renderItem(index, item)}</React.Fragment>
               ))}
+              {uploadedPaths.length > 0 && (
+                <DocumentResults
+                  key='uploaded-documents'
+                  conversationId={conversationContext?.conversation_id ?? ''}
+                  workspace={conversationContext?.workspace}
+                  since={Number.isFinite(uploadedSince) ? uploadedSince : 1}
+                  revision='uploaded'
+                  isProcessing={false}
+                  references={uploadedPaths.join('\n')}
+                  inputs=''
+                  explicitPaths={uploadedPaths}
+                  kind='uploaded'
+                />
+              )}
               <div className='h-20px' />
             </div>
           </div>

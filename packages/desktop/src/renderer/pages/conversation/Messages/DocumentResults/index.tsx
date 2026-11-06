@@ -8,7 +8,12 @@ import { Button, Message } from '@arco-design/web-react';
 import { FileText } from '@icon-park/react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { discoverDocuments, isDocumentReferenced, type DocumentResult } from './discoverDocuments';
+import {
+  discoverDocuments,
+  isDocumentReferenced,
+  isExplicitlySent,
+  type DocumentResult,
+} from './discoverDocuments';
 
 type Props = {
   conversationId: string;
@@ -59,7 +64,9 @@ const DocumentResults: React.FC<Props> = ({
         const verified = await discoverDocuments(
           workspace,
           since,
-          listed.filter((file) => isDocumentReferenced(file, references, inputs)),
+          listed.filter(
+            (file) => isDocumentReferenced(file, references, inputs) || isExplicitlySent(file, explicitPaths)
+          ),
           (path) => ipcBridge.fs.getContentMetadata.invoke({ file: localFileRef(path) }),
           explicitPaths
         );
