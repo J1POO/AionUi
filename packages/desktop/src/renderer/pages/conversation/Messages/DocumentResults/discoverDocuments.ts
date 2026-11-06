@@ -119,6 +119,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
         const inbound = extractInboundPaths(message.content.content);
         if (inbound.length) {
           references.push(...inbound);
+          turnReferences.push(...inbound);
           pendingInbound.push(...inbound);
         }
       }

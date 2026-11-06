@@ -228,6 +228,8 @@ describe('discoverDocuments', () => {
     ] as TMessage[]);
     expect(evidence.groups).toHaveLength(1);
     expect(evidence.groups[0].explicitPaths).toContain('uploads/报表.xlsx');
+    expect(evidence.groups[0].references).toContain('uploads/报表.xlsx');
+    expect(isDocumentReferenced(file('uploads/报表.xlsx'), evidence.groups[0].references, '')).toBe(true);
   });
 
   it('includes an inbound file even when it predates the turn', async () => {
