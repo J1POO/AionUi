@@ -692,6 +692,13 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
           references={group.references}
           inputs={group.inputs}
           explicitPaths={group.explicitPaths}
+          kind={
+            group.inboundPaths.length === 0
+              ? 'generated'
+              : group.inboundPaths.length === group.explicitPaths.length
+                ? 'uploaded'
+                : 'mixed'
+          }
         />
       ));
 

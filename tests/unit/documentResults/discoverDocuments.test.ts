@@ -91,6 +91,7 @@ describe('discoverDocuments', () => {
         references: '/work/report.docx\n已生成 report.docx',
         inputs: '',
         explicitPaths: [],
+        inboundPaths: [],
       },
     ]);
   });
@@ -228,8 +229,33 @@ describe('discoverDocuments', () => {
     ] as TMessage[]);
     expect(evidence.groups).toHaveLength(1);
     expect(evidence.groups[0].explicitPaths).toContain('uploads/报表.xlsx');
+    expect(evidence.groups[0].inboundPaths).toEqual(['uploads/报表.xlsx']);
     expect(evidence.groups[0].references).toContain('uploads/报表.xlsx');
     expect(isDocumentReferenced(file('uploads/报表.xlsx'), evidence.groups[0].references, '')).toBe(true);
+  });
+
+  it('anchors an uploaded file to the user message when the turn has no assistant text', () => {
+    const evidence = collectDocumentEvidence([
+      {
+        id: 'user-only',
+        conversation_id: 'a',
+        type: 'text',
+        position: 'right',
+        created_at: 100,
+        content: { content: '[用户上传的文件]\n- 说明书.docx: uploads/说明书.docx' },
+      },
+      {
+        id: 'tool-1',
+        conversation_id: 'a',
+        type: 'tool_call',
+        position: 'left',
+        created_at: 110,
+        content: { call_id: 'c', name: 'ExecCommand', status: 'completed', args: {} },
+      },
+    ] as TMessage[]);
+    expect(evidence.groups).toHaveLength(1);
+    expect(evidence.groups[0].anchorMessageId).toBe('user-only');
+    expect(evidence.groups[0].inboundPaths).toEqual(['uploads/说明书.docx']);
   });
 
   it('includes an inbound file even when it predates the turn', async () => {

@@ -25,6 +25,8 @@ export type DocumentEvidenceGroup = {
   inputs: string;
   /** Paths explicitly sent through the channel send protocol, even if older than `since`. */
   explicitPaths: string[];
+  /** Workspace paths of files the user uploaded in this turn. */
+  inboundPaths: string[];
 };
 
 const SEND_BLOCK = /\[AIONUI_CHANNEL_SEND\]([\s\S]*?)\[\/AIONUI_CHANNEL_SEND\]/g;
@@ -79,11 +81,15 @@ export function collectDocumentEvidence(messages: TMessage[]): {
   let turnWriters: Array<{ id: string; createdAt: number }> = [];
   let turnExplicit: string[] = [];
   let pendingInbound: string[] = [];
+  let turnStart: { id: string; createdAt: number } | undefined;
   let lastAssistantText: { id: string; createdAt: number } | undefined;
   let turnSince = 0;
 
   const flushTurn = (): void => {
-    const anchor = lastAssistantText ?? turnWriters.at(-1);
+    const anchor =
+      lastAssistantText ??
+      turnWriters.at(-1) ??
+      (pendingInbound.length > 0 ? turnStart : undefined);
     const messageReferences = turnReferences.join('\n');
     if (
       anchor &&
@@ -96,6 +102,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
         references: messageReferences,
         inputs: turnInputs.join('\n'),
         explicitPaths: [...turnExplicit, ...pendingInbound],
+        inboundPaths: pendingInbound,
       });
     }
     turnReferences = [];
@@ -103,6 +110,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
     turnWriters = [];
     turnExplicit = [];
     pendingInbound = [];
+    turnStart = undefined;
     lastAssistantText = undefined;
     turnSince = 0;
   };
@@ -113,6 +121,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
       if (message.type === 'text') {
         flushTurn();
         turnSince = message.created_at ?? 0;
+        turnStart = { id: message.id, createdAt: message.created_at ?? 0 };
         const attachments = parseFileMarker(message.content.content, true).files;
         inputs.push(...attachments);
         turnInputs.push(...attachments);

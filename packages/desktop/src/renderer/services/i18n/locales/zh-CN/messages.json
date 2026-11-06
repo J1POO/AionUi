@@ -100,6 +100,8 @@
   },
   "documentResults": {
     "title": "生成的文档",
+    "uploadedTitle": "上传的文档",
+    "mixedTitle": "文档",
     "loadFailed": "文档列表加载失败，请刷新重试。"
   }
 }

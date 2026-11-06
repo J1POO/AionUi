@@ -19,6 +19,7 @@ type Props = {
   references: string;
   inputs: string;
   explicitPaths: string[];
+  kind?: 'generated' | 'uploaded' | 'mixed';
 };
 
 /** Verified document results, including binary files produced by shell tools. */
@@ -31,8 +32,15 @@ const DocumentResults: React.FC<Props> = ({
   references,
   inputs,
   explicitPaths,
+  kind = 'generated',
 }) => {
   const { t } = useTranslation();
+  const titleKey =
+    kind === 'uploaded'
+      ? 'messages.documentResults.uploadedTitle'
+      : kind === 'mixed'
+        ? 'messages.documentResults.mixedTitle'
+        : 'messages.documentResults.title';
   const preview = useLocalFilePreview(workspace);
   const [snapshot, setSnapshot] = useState<{ owner: string; files: DocumentResult[] }>({ owner: '', files: [] });
   const [failed, setFailed] = useState(false);
@@ -82,11 +90,11 @@ const DocumentResults: React.FC<Props> = ({
   return (
     <section
       className='my-12px flex flex-col gap-8px'
-      aria-label={t('messages.documentResults.title')}
+      aria-label={t(titleKey)}
       data-testid='document-results'
     >
       <div className='flex items-center justify-between text-t-secondary text-12px'>
-        <span>{t('messages.documentResults.title')}</span>
+        <span>{t(titleKey)}</span>
         <Button type='text' size='mini' onClick={() => setRefresh((value) => value + 1)} disabled={isProcessing}>
           {t('common.refresh')}
         </Button>
