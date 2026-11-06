@@ -27,6 +27,8 @@ export type DocumentEvidenceGroup = {
   explicitPaths: string[];
   /** Workspace paths of files the user uploaded in this turn. */
   inboundPaths: string[];
+  /** Any message id from this turn that may be a render anchor. */
+  anchorCandidates: string[];
 };
 
 const SEND_BLOCK = /\[AIONUI_CHANNEL_SEND\]([\s\S]*?)\[\/AIONUI_CHANNEL_SEND\]/g;
@@ -79,6 +81,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
   let turnReferences: string[] = [];
   let turnInputs: string[] = [];
   let turnWriters: Array<{ id: string; createdAt: number }> = [];
+  let turnToolIds: string[] = [];
   let turnExplicit: string[] = [];
   let pendingInbound: string[] = [];
   let turnStart: { id: string; createdAt: number } | undefined;
@@ -86,11 +89,16 @@ export function collectDocumentEvidence(messages: TMessage[]): {
   let turnSince = 0;
 
   const flushTurn = (): void => {
-    // Uploaded files belong under the user message: it is always rendered,
-    // while an assistant text can be folded into a tool summary and never get
-    // its own render slot.
-    const anchor =
-      pendingInbound.length > 0 ? turnStart : (lastAssistantText ?? turnWriters.at(-1));
+    const anchorId =
+      pendingInbound.length > 0
+        ? (turnToolIds.at(-1) ?? lastAssistantText?.id ?? turnStart?.id)
+        : (lastAssistantText?.id ?? turnWriters.at(-1)?.id);
+    const anchor = anchorId
+      ? {
+          id: anchorId,
+          createdAt: pendingInbound.length > 0 ? (turnStart?.createdAt ?? 0) : (lastAssistantText?.createdAt ?? 0),
+        }
+      : undefined;
     const messageReferences = turnReferences.join('\n');
     if (
       anchor &&
@@ -104,11 +112,19 @@ export function collectDocumentEvidence(messages: TMessage[]): {
         inputs: turnInputs.join('\n'),
         explicitPaths: [...turnExplicit, ...pendingInbound],
         inboundPaths: pendingInbound,
+        anchorCandidates: [
+          ...new Set(
+            [turnStart?.id, anchor?.id, ...turnToolIds, ...turnWriters.map((writer) => writer.id)].filter(
+              (value): value is string => Boolean(value)
+            )
+          ),
+        ],
       });
     }
     turnReferences = [];
     turnInputs = [];
     turnWriters = [];
+    turnToolIds = [];
     turnExplicit = [];
     pendingInbound = [];
     turnStart = undefined;
@@ -148,6 +164,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
       lastAssistantText = { id: message.id, createdAt: message.created_at ?? 0 };
     }
     if (message.type === 'tool_call' && message.content.status === 'completed') {
+      turnToolIds.push(message.id);
       const path: unknown = message.content.args.file_path;
       if (typeof path !== 'string') continue;
       if (message.content.name === 'Write') {

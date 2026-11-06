@@ -6,7 +6,7 @@
 
 import type { IConversationArtifact } from '@/common/adapter/ipcBridge';
 import DocumentResults from './DocumentResults';
-import { collectDocumentEvidence } from './DocumentResults/discoverDocuments';
+import { collectDocumentEvidence, extractInboundPaths } from './DocumentResults/discoverDocuments';
 import type { IMessageAcpToolCall, IMessageToolCall, IMessageToolGroup, TMessage } from '@/common/chat/chatLib';
 import { useConversationContextSafe } from '@/renderer/hooks/context/ConversationContext';
 import { useConversationRuntimeView } from '@/renderer/pages/conversation/runtime/useConversationRuntimeView';
@@ -678,29 +678,55 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
     scrollToBottom('smooth');
   };
 
-  const renderDocumentResultsFor = (messageIds: string[]): React.ReactNode =>
-    documentEvidence.groups
-      .filter((group) => messageIds.includes(group.anchorMessageId) && group.inboundPaths.length === 0)
-      .map((group) => (
-        <DocumentResults
-          key={group.anchorMessageId}
-          conversationId={conversationContext?.conversation_id ?? ''}
-          workspace={conversationContext?.workspace}
-          since={group.since}
-          revision={`${list.length}:${list.at(-1)?.id ?? ''}:${list.at(-1)?.status ?? ''}`}
-          isProcessing={isProcessing}
-          references={group.references}
-          inputs={group.inputs}
-          explicitPaths={group.explicitPaths}
-          kind={
-            group.inboundPaths.length === 0
-              ? 'generated'
-              : group.inboundPaths.length === group.explicitPaths.length
-                ? 'uploaded'
-                : 'mixed'
-          }
-        />
-      ));
+  // Anchor each document group to the last rendered item of its turn. Message
+  // text can be folded into a tool summary, so the group carries every possible
+  // message id and we pick the last one that actually has a render slot.
+  const documentResultsByIndex = useMemo(() => {
+    const byIndex = new Map<number, typeof documentEvidence.groups>();
+    for (const group of documentEvidence.groups) {
+      if (group.inboundPaths.length > 0) continue;
+      let anchorIndex = -1;
+      processedList.forEach((item, index) => {
+        const ids =
+          'type' in item && item.type === 'tool_summary'
+            ? item.sourceMessageIds
+            : 'id' in item
+              ? [String(item.id)]
+              : [];
+        if (ids.some((id) => group.anchorCandidates.includes(id))) anchorIndex = index;
+      });
+      if (anchorIndex >= 0) {
+        const groups = byIndex.get(anchorIndex) ?? [];
+        groups.push(group);
+        byIndex.set(anchorIndex, groups);
+      }
+    }
+    return byIndex;
+  }, [documentEvidence.groups, processedList]);
+
+  const renderDocumentGroup = (group: (typeof documentEvidence.groups)[number]): React.ReactNode => (
+    <DocumentResults
+      key={group.anchorMessageId}
+      conversationId={conversationContext?.conversation_id ?? ''}
+      workspace={conversationContext?.workspace}
+      since={group.since}
+      revision={`${list.length}:${list.at(-1)?.id ?? ''}:${list.at(-1)?.status ?? ''}`}
+      isProcessing={isProcessing}
+      references={group.references}
+      inputs={group.inputs}
+      explicitPaths={group.explicitPaths}
+      kind={
+        group.inboundPaths.length === 0
+          ? 'generated'
+          : group.inboundPaths.length === group.explicitPaths.length
+            ? 'uploaded'
+            : 'mixed'
+      }
+    />
+  );
+
+  const renderDocumentResultsAt = (index: number): React.ReactNode =>
+    (documentResultsByIndex.get(index) ?? []).map(renderDocumentGroup);
 
   const renderItem = (_index: number, item: (typeof processedList)[0]) => {
     const highlighted = matchesTargetMessage(item, highlightedMessageId);
@@ -734,13 +760,16 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
             {item.type === 'file_summary' && <MessageFileChanges diffsChanges={item.diffs} />}
             {item.type === 'tool_summary' && <MessageToolGroupSummary messages={item.messages}></MessageToolGroupSummary>}
           </div>
-          {item.type === 'tool_summary' && renderDocumentResultsFor(item.sourceMessageIds)}
         </>
       );
     }
     const message = item as TMessage;
     // User messages keep their own copy row; AI text only shows it at the turn end.
     const showCopyRow = message.position !== 'left' || message.type !== 'text' || aiCopyRowTextIds.has(message.id);
+    const uploadedPaths =
+      message.type === 'text' && message.position === 'right'
+        ? extractInboundPaths(message.content.content)
+        : [];
     return (
       <>
         <MessageItem
@@ -753,7 +782,20 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
           hasForkAnchor={forkAnchoredIds.has(message.id)}
           turnTexts={aiTurnTextsById.get(message.id)}
         ></MessageItem>
-        {message.type === 'text' && renderDocumentResultsFor([message.id])}
+        {uploadedPaths.length > 0 && (
+          <DocumentResults
+            key={`uploaded-${message.id}`}
+            conversationId={conversationContext?.conversation_id ?? ''}
+            workspace={conversationContext?.workspace}
+            since={message.created_at ?? 1}
+            revision={`uploaded:${message.id}`}
+            isProcessing={false}
+            references={uploadedPaths.join('\n')}
+            inputs=''
+            explicitPaths={uploadedPaths}
+            kind='uploaded'
+          />
+        )}
       </>
     );
   };
@@ -765,14 +807,6 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
   if (processedList.length === 0 && emptySlot) {
     return <div className='relative flex-1 h-full flex items-center justify-center'>{emptySlot}</div>;
   }
-
-  // Uploaded channel files are shown as one stable section at the end of the
-  // conversation instead of hanging off a message that may be folded away.
-  const uploadedPaths = [...new Set(documentEvidence.groups.flatMap((group) => group.inboundPaths))];
-  const uploadedSince = documentEvidence.groups.reduce(
-    (min, group) => (group.inboundPaths.length > 0 ? Math.min(min, group.since) : min),
-    Number.POSITIVE_INFINITY
-  );
 
   return (
     <div className='relative flex-1 h-full'>
@@ -801,22 +835,11 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
             >
               <div className='h-10px' />
               {processedList.map((item, index) => (
-                <React.Fragment key={getProcessedItemAnchorId(item) || index}>{renderItem(index, item)}</React.Fragment>
+                <React.Fragment key={getProcessedItemAnchorId(item) || index}>
+                  {renderItem(index, item)}
+                  {renderDocumentResultsAt(index)}
+                </React.Fragment>
               ))}
-              {uploadedPaths.length > 0 && (
-                <DocumentResults
-                  key='uploaded-documents'
-                  conversationId={conversationContext?.conversation_id ?? ''}
-                  workspace={conversationContext?.workspace}
-                  since={Number.isFinite(uploadedSince) ? uploadedSince : 1}
-                  revision='uploaded'
-                  isProcessing={false}
-                  references={uploadedPaths.join('\n')}
-                  inputs=''
-                  explicitPaths={uploadedPaths}
-                  kind='uploaded'
-                />
-              )}
               <div className='h-20px' />
             </div>
           </div>

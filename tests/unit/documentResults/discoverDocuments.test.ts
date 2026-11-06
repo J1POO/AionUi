@@ -92,6 +92,7 @@ describe('discoverDocuments', () => {
         inputs: '',
         explicitPaths: [],
         inboundPaths: [],
+        anchorCandidates: ['user-1', 'answer-1', 'write-1'],
       },
     ]);
   });
@@ -234,7 +235,7 @@ describe('discoverDocuments', () => {
     expect(isDocumentReferenced(file('uploads/报表.xlsx'), evidence.groups[0].references, '')).toBe(true);
   });
 
-  it('anchors an uploaded file to the user message when the turn has no assistant text', () => {
+  it('anchors an uploaded file to the last rendered turn message', () => {
     const evidence = collectDocumentEvidence([
       {
         id: 'user-only',
@@ -254,7 +255,7 @@ describe('discoverDocuments', () => {
       },
     ] as TMessage[]);
     expect(evidence.groups).toHaveLength(1);
-    expect(evidence.groups[0].anchorMessageId).toBe('user-only');
+    expect(evidence.groups[0].anchorMessageId).toBe('tool-1');
     expect(evidence.groups[0].inboundPaths).toEqual(['uploads/说明书.docx']);
   });
 
