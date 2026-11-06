@@ -26,6 +26,7 @@ export function setRemoteToken(token: string): void {
   } catch {
     /* Storage can be unavailable; callers keep working with the in-memory token. */
   }
+  sendTokenToMain(token);
 }
 
 export function clearRemoteToken(): void {
@@ -35,6 +36,22 @@ export function clearRemoteToken(): void {
   } catch {
     /* ignore */
   }
+  sendTokenToMain(null);
+}
+
+/** Push the persisted token to the main process (for header injection). */
+export function syncRemoteTokenToMain(): void {
+  if (typeof window === 'undefined') return;
+  sendTokenToMain(getRemoteToken());
+}
+
+function sendTokenToMain(token: string | null): void {
+  const api = (window as Window & { electronAPI?: { remoteAuthSetToken?: (value: string | null) => Promise<void> } })
+    .electronAPI;
+  if (!api?.remoteAuthSetToken) return;
+  void api.remoteAuthSetToken(token).catch(() => {
+    /* main process may not be ready yet; a later sync retries */
+  });
 }
 
 /** Notify the auth layer that the remote session is gone (401 or WS 1008). */

@@ -49,6 +49,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logFeedbackEvent: (payload: { details?: unknown; level: 'info' | 'warn' | 'error'; message: string }) =>
     ipcRenderer.send('feedback:renderer-log', payload),
   recoverCorruptedDatabase: () => ipcRenderer.invoke('backend:recover-corrupted-database'),
+  // Remote Core: share the bearer token with the main process so it can
+  // authenticate iframe/media/download requests that cannot set headers.
+  remoteAuthSetToken: (token: string | null) => ipcRenderer.invoke('remote-auth:set-token', token),
 });
 
 // Synchronously fetch the aioncore port and expose it to the renderer

@@ -244,6 +244,28 @@ function readRemoteCoreFile(): string | undefined {
 const configuredRemoteCoreUrl = process.env.AIONUI_REMOTE_CORE_URL?.trim() || readRemoteCoreFile();
 let remoteCoreUrl: string | undefined;
 let remoteCoreConfigurationError: Error | undefined;
+let remoteAccessToken: string | undefined;
+ipcMain.handle('remote-auth:set-token', (_event, token: unknown) => {
+  remoteAccessToken = typeof token === 'string' && token.trim() ? token.trim() : undefined;
+});
+
+/**
+ * iframe previews, images and download links cannot attach an Authorization
+ * header themselves. Inject the remote bearer token for every request to the
+ * configured Core so those native requests are authenticated too.
+ */
+function installRemoteAuthHeader(): void {
+  if (!remoteCoreUrl) return;
+  try {
+    const origin = new URL(remoteCoreUrl).origin;
+    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, callback) => {
+      if (remoteAccessToken) details.requestHeaders.Authorization = `Bearer ${remoteAccessToken}`;
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  } catch (error) {
+    console.warn('[AionUi] Failed to install remote auth header:', error);
+  }
+}
 if (configuredRemoteCoreUrl) {
   try {
     remoteCoreUrl = normalizeRemoteCoreUrl(configuredRemoteCoreUrl);
@@ -745,6 +767,7 @@ const handleAppReady = async (): Promise<void> => {
   const t0 = performance.now();
   const mark = (label: string) => console.log(`[AionUi:ready] ${label} +${Math.round(performance.now() - t0)}ms`);
   mark('start');
+  installRemoteAuthHeader();
 
   if (!app.isPackaged) {
     try {

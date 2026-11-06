@@ -8,6 +8,7 @@ import {
   clearRemoteToken,
   getRemoteToken,
   setRemoteToken,
+  syncRemoteTokenToMain,
 } from '@/common/adapter/remoteAuth';
 
 /**
@@ -201,6 +202,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, []);
 
   useEffect(() => {
+    // Main-process header injection (iframe/media/downloads) needs the token
+    // that was persisted by a previous session.
+    if (isRemoteCoreMode) syncRemoteTokenToMain();
     void refresh();
     return () => {
       abortRef.current?.abort();
