@@ -50,6 +50,22 @@ export function extractSentPaths(text: string): string[] {
   return paths;
 }
 
+const INBOUND_MARKER = '[用户上传的文件]';
+
+/** Extract workspace-relative paths declared in the channel inbound-file block. */
+export function extractInboundPaths(text: string): string[] {
+  const markerIndex = text.indexOf(INBOUND_MARKER);
+  if (markerIndex < 0) return [];
+  const section = text.slice(markerIndex + INBOUND_MARKER.length);
+  const paths: string[] = [];
+  for (const line of section.split('\n')) {
+    const match = line.match(/^-\s+.*?:\s+(\S.*)$/);
+    const candidate = match?.[1]?.trim();
+    if (candidate && /\.(?:docx?|xlsx?|xlsm|csv|pptx?|pdf)$/i.test(candidate)) paths.push(candidate);
+  }
+  return paths;
+}
+
 export function collectDocumentEvidence(messages: TMessage[]): {
   references: string;
   inputs: string;
@@ -62,6 +78,7 @@ export function collectDocumentEvidence(messages: TMessage[]): {
   let turnInputs: string[] = [];
   let turnWriters: Array<{ id: string; createdAt: number }> = [];
   let turnExplicit: string[] = [];
+  let pendingInbound: string[] = [];
   let lastAssistantText: { id: string; createdAt: number } | undefined;
   let turnSince = 0;
 
@@ -78,13 +95,14 @@ export function collectDocumentEvidence(messages: TMessage[]): {
         since: turnSince || anchor.createdAt,
         references: messageReferences,
         inputs: turnInputs.join('\n'),
-        explicitPaths: turnExplicit,
+        explicitPaths: [...turnExplicit, ...pendingInbound],
       });
     }
     turnReferences = [];
     turnInputs = [];
     turnWriters = [];
     turnExplicit = [];
+    pendingInbound = [];
     lastAssistantText = undefined;
     turnSince = 0;
   };
@@ -98,6 +116,11 @@ export function collectDocumentEvidence(messages: TMessage[]): {
         const attachments = parseFileMarker(message.content.content, true).files;
         inputs.push(...attachments);
         turnInputs.push(...attachments);
+        const inbound = extractInboundPaths(message.content.content);
+        if (inbound.length) {
+          references.push(...inbound);
+          pendingInbound.push(...inbound);
+        }
       }
       continue;
     }

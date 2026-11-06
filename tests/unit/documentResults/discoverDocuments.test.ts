@@ -204,4 +204,41 @@ describe('discoverDocuments', () => {
     );
     expect(result.map((entry) => entry.name)).toEqual(['sample-report.docx']);
   });
+
+  it('extracts inbound channel files into the user turn evidence', () => {
+    const evidence = collectDocumentEvidence([
+      {
+        id: 'user-1',
+        conversation_id: 'a',
+        type: 'text',
+        position: 'right',
+        created_at: 100,
+        content: {
+          content: '总结一下\n\n[用户上传的文件]\n- 报表.xlsx: uploads/报表.xlsx',
+        },
+      },
+      {
+        id: 'answer-1',
+        conversation_id: 'a',
+        type: 'text',
+        position: 'left',
+        created_at: 200,
+        content: { content: '已读取 报表.xlsx' },
+      },
+    ] as TMessage[]);
+    expect(evidence.groups).toHaveLength(1);
+    expect(evidence.groups[0].explicitPaths).toContain('uploads/报表.xlsx');
+  });
+
+  it('includes an inbound file even when it predates the turn', async () => {
+    const metadata = vi.fn().mockResolvedValue({ size: 100, lastModified: 50, isDirectory: false });
+    const result = await discoverDocuments(
+      '/work',
+      150,
+      [file('uploads/报表.xlsx')],
+      metadata,
+      ['uploads/报表.xlsx']
+    );
+    expect(result.map((entry) => entry.name)).toEqual(['报表.xlsx']);
+  });
 });
