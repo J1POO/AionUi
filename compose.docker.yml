@@ -10,6 +10,12 @@ services:
         aioncore: ${AIONCORE_BUILD_CONTEXT:-../AionCore-v0.2.2-weixin-file-send}
     restart: unless-stopped
     init: true
+    environment:
+      - HTTPS_PROXY=${AIONUI_HTTPS_PROXY:-http://host.docker.internal:7897}
+      - HTTP_PROXY=${AIONUI_HTTP_PROXY:-http://host.docker.internal:7897}
+      - NO_PROXY=localhost,127.0.0.1,::1,192.168.110.0/24
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${AIONUI_BIND_IP:-0.0.0.0}:${AIONUI_PORT:-25808}:25808"
     volumes:
