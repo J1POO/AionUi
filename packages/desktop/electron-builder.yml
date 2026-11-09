@@ -107,6 +107,8 @@ extraResources:
     to: .
   - from: resources/app.png
     to: app.png
+  - from: resources/remote-core.txt
+    to: remote-core.txt
   # aioncore binary (pre-compiled per platform/arch, ships its own bun runtime)
   - from: resources/bundled-aioncore
     to: bundled-aioncore
